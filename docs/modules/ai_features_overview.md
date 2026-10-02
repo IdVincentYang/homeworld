@@ -112,6 +112,65 @@ classDiagram
 | `ShipTypesBeingBuilt` | 每个管理器按舰船类型统计正在建造数量。 | 配合 `newships` 与等待队列，把已经安排建造的船和已下水、待分配的船区分开。 |
 | `GrowSelection` / `SelectCommand` | 游戏中常用的舰船集合及其具体选择数据。 | AI 会在这些集合上筛选、计数和移除舰船；move 队列则是 `LinkedList`。阅读代码时不要把“集合成员”和“团队命令节点”混为一类。 |
 
+### 命名空间前缀速查
+
+多数 AI 函数以前缀标出它属于哪一层。前缀是阅读线索，不是严格的语法规则：部分旧字段没有前缀，少数字母相似的前缀属于不同模块。
+
+| 前缀 | 所属部分 | 例子 | 看名字时可以先这样理解 |
+| :-- | :-- | :-- | :-- |
+| `aiplayer` | AI 玩家控制器 | [`aiplayerUpdateAll()`](../../src/Game/AIPlayer.c#L832)、`aiplayerPlay()`；[`AIPlayer.aiplayerUpdateRate`](../../src/Game/AIPlayer.h#L104) | “某个电脑玩家的 AI 如何初始化、调度和更新”。 |
+| `aif` | AI Fleet Manager | [`aifFleetCommand()`](../../src/Game/AIFleetMan.c#L1278)、`aifAssignNewShips()`；`AIPlayer.aifHyperSavings` | 汇总舰队级请求、分配新舰和协调建造。`aifHyper*` 字段也归在 Fleet Manager 的超空间逻辑下。 |
+| `aia` | Attack Manager | [`aiaAttackManager()`](../../src/Game/AIAttackMan.c#L883)、`aiaGenerateAttackType()`；`AIPlayer.aiaAttackProbability` | 进攻团队、侦察、骚扰和攻击类型选择。 |
+| `aid` | Defense Manager | [`aidDefenseManager()`](../../src/Game/AIDefenseMan.c#L793)；`AIPlayer.aidProximitySensors`、`aidDefenseTargets` | 防御团队、告警和防御目标。 |
+| `air` | Resource Manager | [`airResourceManager()`](../../src/Game/AIResourceMan.c#L816)；`AIPlayer.airResourceCollectors`、`airResourceReserves` | 资源采集、资源舰与相关团队。 |
+| `ait` | AI Team | [`aitCreate()`](../../src/Game/AITeam.c#L37)、`aitAddShip()`、[`aitExecute()`](../../src/Game/AITeam.c#L2112) | 团队生命周期、成员管理、move 推进和团队状态查询。 |
+| `aio` | AI Orders | [`aioCreateGuardShips()`](../../src/Game/AIOrders.c#L27)、`aioCreateFighterStrike()` | 创建一组高层团队订单；通常会把一个意图展开成多个 move。 |
+| `aim` | AI Moves | [`aimProcessGetShips()`](../../src/Game/AIMoves.c#L110)、`aimCreateAttack()`（`AIMoves2.c`） | 创建或执行一条具体 move；它是 `AITeam.moves` 队列中的执行单元。 |
+| `aie` | AI Events | [`aieExecute()`](../../src/Game/AIEvents.c#L14)、`aieHandlerSetFuelLow()` | 在团队执行 move 时检查条件、触发事件。`aie` 是事件检查/注册层。 |
+| `aih` | AI Handlers | [`aihGenericFuelLowHandler()`](../../src/Game/AIHandler.c#L152)、`aihPatrolEnemyNearbyHandler()` | 事件触发后运行的响应逻辑；通常由 `aieHandlerSet*()` 挂到 move 上。 |
+| `aiu` | AI Utilities | [`aiuCreateBlobArrays()`](../../src/Game/AIUtilities.c#L4772)、`aiuAttackFeatureEnabled()` | 多个 AI 子系统共用的筛选、目标、blob、位掩码等工具和宏。 |
+| `aivar` | AI Variable | [`aivarCreate()`](../../src/Game/AIVar.c)、`aivarValueSet()`；[`AIVar.value` / `label`](../../src/Game/AIVar.h#L11) | 创建、查找和修改带标签的 AI 变量，常用作 move 完成标志、计数器或脚本变量。 |
+| `aiship` | AI Ship | [`aishipFlyToPoint()`](../../src/Game/AIShip.c#L263)、`aishipGetTrajectory()` | 舰船导航、轨迹预测和导弹引导等单舰层辅助逻辑。 |
+| `aitrack` | AI Track | [`aitrackHeadingFunc()`](../../src/Game/AItrack.c#L480)、`aitrackZeroVelocity()` | 舰船朝向、角速度和速度的跟踪/稳定辅助。虽然拼写以 `ait` 开头，它属于 AITrack，不是 `ait` 团队管理函数。 |
+| `kasf` | KAS Function 宿主接口 | [`kasfAttack()`](../../src/Game/KASFunc.c#L290)、`kasfTeamGiveToAI()` | KAS 脚本调用的游戏侧函数；常通过隐式的 `CurrentTeamP` 操作当前脚本团队，不属于常规 AI 管理器。 |
+
+这组前缀也能直接读出“策略如何落成执行步骤”：
+
+```mermaid
+flowchart LR
+    AIA["aia：选择进攻策略"] --> AIO["aio：展开成一组订单"]
+    AIO --> AIMC["aimCreate*：创建 move"]
+    AIMC --> Q["AITeam.moves / curMove"]
+    Q --> AIT["aitExecute()"]
+    AIT --> AIMP["aimProcess*：执行当前 move"]
+    Q --> AIE["aie：检查事件条件"]
+    AIE --> AIH["aih：运行响应处理器"]
+    AIH --> Q
+    AIU["aiu：共享查询与工具"] -. 被多层调用 .-> AIA
+    AIU -. 被多层调用 .-> AIO
+    AIU -. 被多层调用 .-> AIMP
+```
+
+#### 数据字段里的小写前缀
+
+在 `AIPlayer` 中，字段名前缀通常沿用对应管理器：`aia*` 看进攻状态，`aid*` 看防御状态，`air*` 看资源状态，`aif*` 看舰队/超空间状态。`aiplayer*` 多为玩家级调度信息。注意 `AIPlayer.h` 还用 `// resourceman stuff`、`// attackman stuff`、`// defenseman stuff` 这样的区块注释划分字段；例如 `attackTeam[]`、`guardTeams[]` 没有模块前缀，但归属可从区块和类型看出。`AITeam` 的 `kas*` 字段则是脚本团队的标签、FSM/State 和回调数据。
+
+#### 大写前缀：feature 位和调参常量
+
+大写通常是宏、枚举式常量或可调参数，不要仅凭大写前缀就认定它属于哪一个结构字段：
+
+| 前缀 | 常见含义 | 重要辨别方式 |
+| :-- | :-- | :-- |
+| `AIR_` | Resource feature 位，例如 [`AIR_SMART_COLLECTOR_REQUESTS`](../../src/Game/AIFeatures.h#L26) | 存在 `AIPlayer.ResourceFeatures` 中。 |
+| `AIA_` | `AIFeatures.h` 中的 Attack feature 位，例如 [`AIA_HARASS`](../../src/Game/AIFeatures.h#L59) | 存在 `AIPlayer.AttackFeatures` 中；其他文件里的 `AIA_*_PROB` 是攻击概率调参。名称相近的小写 `aia*` 是 Attack Manager 函数/状态。 |
+| `AID_` | `AIFeatures.h` 中的 Defense feature 位，例如 [`AID_ACTIVE_GUARD`](../../src/Game/AIFeatures.h#L38) | 此类 feature 存在 `AIPlayer.DefenseFeatures` 中；`AID_*` 在管理器代码中也可作调参名，例如母舰防守半径。 |
+| `AIT_` | Team feature 位，例如 [`AIT_TACTICS`](../../src/Game/AIFeatures.h#L71)；也用于团队标志常量，例如 [`AIT_DestroyTeam`](../../src/Game/AITeam.h#L32) | 查看使用它的字段：`TeamFeatures` 表示团队 feature，`teamFlags` 表示团队运行标志。`AIT_TEAM_MOVE_DELAY`、`AIT_DEFAULT_FORMATION` 等则是团队调参。 |
+| `AIF_` | `AIFeatures.h` 中的 [`AIF_HYPERSPACING`](../../src/Game/AIFeatures.h#L33) | 这是存放在 `AIPlayer.ResourceFeatures` 中的超空间 feature 位。其他位置也有 `AIF_RESEARCH_DELAY` 这样的调参名；大写 `AIF_` 不能一概当作小写 `aif*` 的函数命名空间。 |
+| `AIPLAYER_` | 玩家级容量、更新频率和其他全局调参，例如 `AIPLAYER_UPDATE_RATE` | 是 AI 玩家参数名，不是 `AIPlayer` 结构体字段本身。 |
+| `AIM_`、`AIO_`、`AIU_`、`AIH_`、`AISHIP_`、`AITRACK_` | Move、Order、Utility、Handler、Ship、Track 子系统的调参或标志 | 例如 `AIM_*` 的 move 参数、`AISHIP_*` 的飞行标志；这些前缀不都表示 `AIPlayer` 的 feature 位。 |
+
+`AIA_`、`AID_`、`AIR_` 这些 feature 位的数值可以重叠，因为它们分别测试不同的 bitfield；同一字母开头的参数名也可能是概率、半径、延迟等调参。看常量时先确认定义文件，再找 `aiu*FeatureEnabled()` 调用和实际读取的字段。读代码可按这条链分层：`aiaGenerateAttackType()`（选择进攻策略）→ `aioCreate*()`（组装订单）→ `aimCreate*()` / `aimProcess*()`（排入并执行具体 move）→ `aitExecute()`（推进团队）。
+
 ### Feature 位与难度
 
 - `AIPlayer.ResourceFeatures`、`AttackFeatures`、`DefenseFeatures` 是玩家级位掩码；`AITeam.TeamFeatures` 是团队级位掩码。相应的 `aiu*FeatureEnabled()` 宏让管理器按位判断能力是否打开。
