@@ -190,6 +190,88 @@ flowchart LR
 
 `kasSave` 把 `CurrentMissionWatchFunction` 存为索引（`WatchFunctionToIndex`）、`CurrentTeamP` 存为团队索引（`AITeamToTeamIndex`），四张标签表与变量/定时器逐项序列化（`src/Game/KAS.c:1191-1256`）。`WatchFunctionToIndex`/`IndexToWatchFunction` 基于 `WatchFunctionAddress(i)` 的一张 `switch` 表（`src/Game/SinglePlayer.c:2868-2922`）。`kasConvertFuncPtrToOffset` 以 `IndexToWatchFunction(currentMission-1)` 的地址为基，把任意函数指针转成「相对当前任务 watch 函数的字节偏移」，存档写偏移而非绝对地址，读档时反向还原——这是脚本编译进可执行文件后仍能存读脚本状态的机制（`src/Game/KAS.c:1360-1383`）。
 
+### 3.5 具体例子：Mission01 的编队试炼 FSM
+
+这个例子把 Mission 层、团队 FSM、State、作用域变量和 Host API 连成一条流程。源码位于 [`Mission01.kas` 的 `TDFormationTrial`](../../src/SinglePlayer/Mission01.kas#L1426)；下面摘录关键语句，省略了与主线无关的分支。
+
+任务初始化时，Mission 层把已有的 `TEAM_TDFormationTrial` 交给这个 FSM：
+
+```kas
+FSMCREATE (TDFormationTrial, TEAM_TDFormationTrial);
+```
+
+`kasFSMCreate` 将该团队标记为 `ScriptTeam`，登记 FSM 的 watch 函数，并立即运行 FSM 的 `INIT`。这里先设置团队属性并让团队超空间跃出；源码中的初始 `Jump WatchForAttackers` 被注释掉，因此此时还没有活动的 State watch 函数。
+
+```kas
+INIT
+    TeamAttributesSet (ATTRIBUTES_StartInHS);
+    TeamHyperspaceOut ();
+    //Jump WatchForAttackers;
+ENDINIT
+
+WATCH
+    IFONCE (VarGet ("G_FormationDronesHyperspaceIn") = TRUE)
+            Jump GetIntoPosition;
+    ENDIFONCE
+ENDWATCH
+```
+
+`G_FormationDronesHyperspaceIn` 由同一任务的 FleetIntel 状态 `FCHyperspaceJuice` 设置为 `TRUE`（[`Mission01.kas`](../../src/SinglePlayer/Mission01.kas#L447)）。`G_` 表示这个变量跨 Mission/FSM/State 作用域共享。于是 `TDFormationTrial` 的 FSM `WATCH` 每个 KAS 周期检查它；条件成立后执行 `Jump GetIntoPosition`。`IFONCE` 会给这条条件分支加一次性标记，避免变量保持 `TRUE` 时每周期重复跳转。
+
+```kas
+STATE WaitingForShips
+    INIT
+    ENDINIT
+    WATCH
+        IF (ShipsCount (TEAMSHIPS_TDFormationTrial) = 9)
+                FormationWall ();
+                TeamHyperspaceOut ();
+                Jump GetIntoPosition;
+        ENDIF
+    ENDWATCH
+ENDSTATE
+
+STATE GetIntoPosition
+    INIT
+        TeamHyperspaceIn (POINT_FormationTrialPING);
+    ENDINIT
+    WATCH
+        IF (Nearby (POINT_TacticsTrialPING, 500))
+                PingAddShips (TEAMSHIPS_TDTacticsTrial, "TacticsTrialPING");
+                Jump WatchForAttackers;
+        ENDIF
+        ...
+    ENDWATCH
+ENDSTATE
+```
+
+可以按下面这条主线阅读：
+
+```mermaid
+flowchart TD
+    A[Mission INIT: FSMCREATE 绑定试炼团队] --> B[kasFSMCreate: 标记 ScriptTeam 并运行 FSM INIT]
+    B --> C[FSM WATCH: 等待全局变量 G_FormationDronesHyperspaceIn]
+    D[FleetIntel 状态 FCHyperspaceJuice] -->|VarCreateSet 将 G_变量设为 TRUE| C
+    C -->|JUMP GetIntoPosition| E[State INIT: TeamHyperspaceIn 到 FormationTrial 点]
+    E --> F[State WATCH: Nearby 检查当前团队与 TacticsTrial 点的距离]
+    F -->|距离不超过 500| G[PingAddShips 给 Tactics 目标团队加 Ping]
+    G --> H[JUMP WatchForAttackers]
+    F -->|G_TDFormationGoToWaiting = TRUE| I[WaitingForShips]
+    H -->|G_TDFormationGoToWaiting = TRUE| I
+    I -->|ShipsCount = 9| J[设置 Wall 编队并超空间跃出]
+    J --> E
+```
+
+这条流程体现了 KAS 的关键运行方式：
+
+- **FSM 与团队绑定**：`FSMCREATE` 不是新建舰船团队，而是把关卡中已有的团队交给脚本 FSM 控制。
+- **状态条件由脚本轮询**：FSM/State 的 `WATCH` 由 `kasExecute` 按 AI 周期调用；`ShipsCount`、`Nearby`、`VarGet` 读取游戏状态并决定是否转移。
+- **`JUMP` 兼有转移和初始化**：`kasJump` 更新当前 State 及其 watch 函数，并立即调用新 State 的 `INIT`。例如跳到 `GetIntoPosition` 时，`TeamHyperspaceIn` 会马上执行；后续 watch 检查则由 `kasExecute` 调度。这里跳去 `WaitingForShips` 的条件是 `G_TDFormationGoToWaiting` 变为 `TRUE`，该状态再等到团队舰船数为 9。
+- **Host API 执行游戏动作**：`TeamHyperspaceIn`、`FormationWall`、`PingAddShips` 等由 C 侧 `kasf*` 实现。脚本决定何时调用，移动、编队或 Ping 的具体效果由宿主系统完成。
+- **跨 FSM 协作靠共享状态**：FleetIntel 的状态写入 `G_...`，试炼 FSM 读取它启动流程；这比让两个 FSM 直接调用彼此的 State 更松耦合。
+
+这里的 `Nearby (POINT_TacticsTrialPING, 500)` 检查的是**当前 FSM 团队**是否有舰船进入 `POINT_TacticsTrialPING` 周围 500 距离内（`kasfNearby`，`src/Game/KASFunc.c:1629-1643`）；而前一条 `TeamHyperspaceIn` 的目标是 `POINT_FormationTrialPING`。两个标签在源码中确实不同，不应把它们读成同一个点。
+
 ---
 
 ## 4. 与其它模块的交互
