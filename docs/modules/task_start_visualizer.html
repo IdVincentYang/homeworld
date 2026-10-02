@@ -1,0 +1,1647 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>taskStart / taskYield | Context Lab</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --paper: #f4f6f2;
+            --ink: #182321;
+            --muted: #64716c;
+            --line: #d6ddd7;
+            --panel: #fbfcf9;
+            --green: #16775c;
+            --green-soft: #d9eee4;
+            --orange: #d85f32;
+            --orange-soft: #f8e2d7;
+            --blue: #236a91;
+            --blue-soft: #dcebf3;
+            --yellow: #e4b83f;
+            --shadow: 0 12px 32px rgba(24, 35, 33, .07);
+            font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            color: var(--ink);
+            background-color: var(--paper);
+            background-image: linear-gradient(rgba(22, 119, 92, .035) 1px, transparent 1px), linear-gradient(90deg, rgba(22, 119, 92, .035) 1px, transparent 1px);
+            background-size: 28px 28px;
+        }
+
+        button {
+            font: inherit;
+        }
+
+        code,
+        .mono,
+        .value,
+        .address,
+        .reg-name,
+        .step-no,
+        .eyebrow {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        }
+
+        .topbar {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 14px;
+            padding: 7px 20px;
+            border-bottom: 1px solid var(--line);
+            background: rgba(244, 246, 242, .94);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .brand-mark {
+            display: grid;
+            place-items: center;
+            width: 26px;
+            height: 26px;
+            color: white;
+            background: var(--green);
+            font: 700 17px Georgia, serif;
+            transform: rotate(-4deg);
+        }
+
+        .brand-name {
+            white-space: nowrap;
+            font: 700 13px Georgia, "Times New Roman", serif;
+        }
+
+        .page-heading {
+            display: flex;
+            min-width: 0;
+            align-items: baseline;
+            gap: 11px;
+            padding-left: 14px;
+            border-left: 1px solid var(--line);
+        }
+
+        .page-heading h1 {
+            flex: 0 0 auto;
+            margin: 0;
+            font: 500 18px/1.15 Georgia, "Times New Roman", serif;
+        }
+
+        .page-heading p {
+            overflow: hidden;
+            min-width: 0;
+            margin: 0;
+            color: var(--muted);
+            font-size: 10px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .top-meta {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 9px;
+            color: var(--muted);
+            font-size: 9px;
+            white-space: nowrap;
+        }
+
+        .top-meta code {
+            color: var(--ink);
+            font-size: 9px;
+        }
+
+        main {
+            max-width: 1540px;
+            padding: 14px 20px 16px;
+            margin: 0 auto;
+        }
+
+        .quick-guide {
+            display: grid;
+            grid-template-columns: minmax(190px, .8fr) minmax(0, 2fr);
+            gap: 8px 16px;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px 13px;
+            background: #e9eee9;
+            border: 1px solid var(--line);
+            border-left: 3px solid var(--green);
+        }
+
+        .quick-guide-lead {
+            margin: 0;
+            color: #384743;
+            font-size: 11px;
+            line-height: 1.5;
+        }
+
+        .quick-guide-lead strong {
+            color: var(--ink);
+        }
+
+        .quick-flow {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 7px;
+        }
+
+        .quick-flow-step {
+            min-width: 0;
+            padding-left: 8px;
+            border-left: 1px solid #b8c7bd;
+            color: var(--muted);
+            font-size: 9px;
+            line-height: 1.4;
+        }
+
+        .quick-flow-step strong {
+            display: block;
+            margin-bottom: 2px;
+            color: var(--green);
+            font: 700 9px "SFMono-Regular", Consolas, monospace;
+        }
+
+        .quick-guide-note {
+            grid-column: 1 / -1;
+            margin: 0;
+            padding-top: 7px;
+            border-top: 1px solid #d2dcd3;
+            color: #53625c;
+            font-size: 9px;
+            line-height: 1.5;
+        }
+
+        .quick-guide-note + .quick-guide-note {
+            padding-top: 2px;
+            border-top: 0;
+        }
+
+        .quick-guide-note code {
+            color: var(--ink);
+            font-size: 9px;
+            font-weight: 700;
+        }
+
+        .eyebrow {
+            color: var(--green);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: .15em;
+            text-transform: uppercase;
+        }
+
+        .workspace {
+            display: grid;
+            grid-template-columns: 190px minmax(400px, 1.2fr) minmax(350px, 1fr);
+            gap: 10px;
+            align-items: stretch;
+        }
+
+        .panel {
+            min-width: 0;
+            background: var(--panel);
+            border: 1px solid var(--line);
+            box-shadow: var(--shadow);
+        }
+
+        .steps-panel {
+            padding: 10px 9px;
+        }
+
+        .panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 0 4px 8px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .panel-title {
+            margin: 0;
+            font: 700 11px "SFMono-Regular", Consolas, monospace;
+            letter-spacing: .09em;
+            text-transform: uppercase;
+        }
+
+        .count {
+            color: var(--muted);
+            font: 10px "SFMono-Regular", Consolas, monospace;
+        }
+
+        .step-list {
+            display: grid;
+            gap: 3px;
+            padding-top: 7px;
+        }
+
+        .step-button {
+            display: grid;
+            grid-template-columns: 24px 1fr;
+            gap: 6px;
+            align-items: start;
+            width: 100%;
+            padding: 5px 6px;
+            text-align: left;
+            color: var(--muted);
+            background: transparent;
+            border: 0;
+            border-left: 2px solid transparent;
+            cursor: pointer;
+            transition: background .16s ease, color .16s ease, border-color .16s ease;
+        }
+
+        .step-button:hover {
+            color: var(--ink);
+            background: #edf2ed;
+        }
+
+        .step-button[aria-current="step"] {
+            color: var(--ink);
+            background: var(--green-soft);
+            border-left-color: var(--green);
+        }
+
+        .step-no {
+            padding-top: 1px;
+            font-size: 10px;
+            color: var(--green);
+        }
+
+        .step-label {
+            font-size: 10px;
+            font-weight: 650;
+            line-height: 1.25;
+        }
+
+        .step-hint {
+            display: block;
+            margin-top: 2px;
+            color: var(--muted);
+            font-size: 9px;
+            font-weight: 400;
+            line-height: 1.25;
+        }
+
+        .steps-foot {
+            margin: 8px 3px 0;
+            padding-top: 7px;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 10px;
+            line-height: 1.5;
+        }
+
+        .center-panel {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .scene-head {
+            padding: 15px 16px 11px;
+            background: #fff;
+        }
+
+        .scene-kicker {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: var(--muted);
+            font: 10px "SFMono-Regular", Consolas, monospace;
+        }
+
+        #phaseLabel {
+            padding: 3px 7px;
+            border: 1px solid #d8e2da;
+            color: var(--green);
+            background: #f4f8f4;
+            font-size: 9px;
+            letter-spacing: .06em;
+        }
+
+        .live-dot {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            margin-right: 6px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 0 3px var(--green-soft);
+        }
+
+        h2 {
+            margin: 7px 0 5px;
+            font: 500 21px/1.2 Georgia, "Times New Roman", serif;
+            letter-spacing: 0;
+        }
+
+        .scene-desc {
+            margin: 0;
+            color: var(--muted);
+            font-size: 11px;
+            line-height: 1.55;
+        }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
+            align-items: stretch;
+            gap: 10px;
+            min-height: 0;
+            margin: 10px 12px 12px;
+        }
+
+        .static-area {
+            padding: 9px 12px 10px;
+            border-bottom: 1px solid #b9c9bd;
+            background: #f2f8f3;
+        }
+
+        .memory-labelrow {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 7px;
+        }
+
+        .memory-labelrow h3 {
+            margin: 0;
+            font: 700 10px "SFMono-Regular", Consolas, monospace;
+            letter-spacing: .07em;
+            text-transform: uppercase;
+        }
+
+        .static-slot-list {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 4px;
+        }
+
+        .static-slot {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 7px;
+            min-width: 0;
+            padding: 5px 7px;
+            border: 1px solid #d5e0d7;
+            background: #fff;
+            transition: background .18s ease, border-color .18s ease;
+        }
+
+        .static-slot.changed {
+            border-color: #df916f;
+            background: #fff2e9;
+        }
+
+        .static-slot code {
+            overflow: hidden;
+            color: var(--ink);
+            font-size: 8px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .static-slot-value {
+            color: var(--blue);
+            font: 700 9px "SFMono-Regular", Consolas, monospace;
+            white-space: nowrap;
+        }
+
+        .stack-area {
+            min-width: 0;
+            padding: 11px;
+            border: 1px solid #dce5de;
+            background: #fbfcfa;
+        }
+
+        .stack-labelrow {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 9px;
+        }
+
+        .stack-labelrow h3,
+        .state-subhead {
+            margin: 0;
+            font: 700 11px "SFMono-Regular", Consolas, monospace;
+            letter-spacing: .09em;
+            text-transform: uppercase;
+        }
+
+        .stack-direction {
+            flex: 0 0 auto;
+            padding: 4px 7px;
+            border: 1px solid #dce5de;
+            color: var(--muted);
+            background: #fff;
+            font: 8px "SFMono-Regular", Consolas, monospace;
+        }
+
+        .stack-viewport {
+            min-height: 115px;
+            padding: 9px 9px 8px;
+            border: 1px solid #dfe7e1;
+            background: #fff;
+        }
+
+        .stack-high {
+            padding: 0 0 7px;
+            color: var(--blue);
+            font: 700 8px "SFMono-Regular", Consolas, monospace;
+            letter-spacing: .06em;
+        }
+
+        .stack-slots {
+            display: grid;
+            gap: 3px;
+        }
+
+        .stack-boundary {
+            display: grid;
+            grid-template-columns: auto minmax(24px, 1fr) auto;
+            align-items: center;
+            gap: 8px;
+            min-height: 20px;
+            transition: color .18s ease;
+        }
+
+        .boundary-address {
+            color: var(--blue);
+            font: 700 10px "SFMono-Regular", Consolas, monospace;
+            white-space: nowrap;
+        }
+
+        .boundary-rule {
+            height: 1px;
+            background: #82948c;
+        }
+
+        .boundary-label {
+            color: var(--muted);
+            font-size: 9px;
+            white-space: nowrap;
+        }
+
+        .stack-region-start {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin: 2px 0 3px;
+            color: var(--muted);
+            font: 8px "SFMono-Regular", Consolas, monospace;
+            letter-spacing: .04em;
+        }
+
+        .stack-region,
+        .stack-cell {
+            position: relative;
+            padding: 6px 9px;
+            border: 1px solid var(--line);
+            background: #fff;
+            transition: all .18s ease;
+        }
+
+        .stack-region {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            align-items: center;
+            gap: 8px;
+            min-height: 43px;
+        }
+
+        .stack-cell {
+            min-height: 41px;
+            margin-left: 14px;
+            border-color: #e8b09b;
+            background: #fffaf7;
+        }
+
+        .stack-cell .region-meta {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 3px;
+        }
+
+        .stack-region.changed,
+        .stack-cell.changed,
+        .stack-boundary.changed {
+            border-color: var(--orange);
+            box-shadow: inset 3px 0 var(--orange);
+            animation: pop .34s ease-out;
+        }
+
+        @keyframes pop {
+            0% {
+                transform: translateX(5px);
+                background: #fff0e9;
+            }
+
+            100% {
+                transform: translateX(0);
+                background: #fff;
+            }
+        }
+
+        .slot-name {
+            font-size: 10px;
+            font-weight: 700;
+        }
+
+        .slot-detail {
+            display: block;
+            margin-top: 2px;
+            color: var(--muted);
+            font-size: 9px;
+            font-weight: 400;
+        }
+
+        .stack-region.slot-host {
+            background: #f8faf8;
+        }
+
+        .stack-region.slot-task {
+            border-color: #a9cfbd;
+            background: #f5fbf7;
+        }
+
+        .stack-region.slot-saved {
+            margin-top: 9px;
+            border-style: dashed;
+            border-color: #d4a07d;
+            background: #fff5ed;
+        }
+
+        .stack-region.slot-saved:before {
+            content: "TASKDATA STACK COPY";
+            position: absolute;
+            top: -7px;
+            left: 8px;
+            padding: 0 4px;
+            color: #9c4729;
+            background: var(--panel);
+            font: 8px "SFMono-Regular", Consolas, monospace;
+            letter-spacing: .04em;
+        }
+
+        .stack-cell.slot-return {
+            border-color: #e8b09b;
+            background: var(--orange-soft);
+        }
+
+        .stack-cell.slot-empty {
+            border-style: dashed;
+            color: #9aa59f;
+            background: #fafbf9;
+        }
+
+        .stack-address {
+            display: inline-block;
+            margin-right: 7px;
+            color: var(--blue);
+            font: 9px "SFMono-Regular", Consolas, monospace;
+        }
+
+        .stack-cell.slot-return .stack-address {
+            color: #9c4729;
+        }
+
+        .region-meta,
+        .cell-meta {
+            color: var(--muted);
+            font: 9px "SFMono-Regular", Consolas, monospace;
+            white-space: nowrap;
+        }
+
+        .stack-low {
+            padding: 7px 0 0;
+            color: var(--blue);
+            font: 700 8px "SFMono-Regular", Consolas, monospace;
+            letter-spacing: .06em;
+        }
+
+        .stack-caption {
+            margin: 8px 0 0;
+            padding: 0 1px;
+            color: var(--muted);
+            font-size: 10px;
+            line-height: 1.5;
+        }
+
+        .code-strip {
+            min-width: 0;
+            min-height: 220px;
+            max-height: 420px;
+            display: flex;
+            flex-direction: column;
+            padding: 10px 12px;
+            background: #202c2a;
+            color: #d6e6dc;
+            border-left: 3px solid var(--yellow);
+        }
+
+        .code-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 6px;
+            color: #a8bbb1;
+            font: 9px "SFMono-Regular", Consolas, monospace;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+        }
+
+        .code-strip pre {
+            min-height: 0;
+            flex: 1 1 auto;
+            overflow: auto;
+            margin: 0;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            color: #eff5ee;
+            font: 10px/1.5 "SFMono-Regular", Consolas, monospace;
+            tab-size: 4;
+        }
+
+        .code-comment {
+            color: #a8cba9;
+            font-style: italic;
+        }
+
+        @media (max-width:760px) {
+            .detail-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            .code-strip {
+                min-height: 180px;
+            }
+        }
+
+        .inspector {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .inspector-section {
+            padding: 10px 11px;
+        }
+
+        .inspector-section+.inspector-section {
+            border-top: 1px solid var(--line);
+        }
+
+        .subhead-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 6px;
+        }
+
+        .state-subhead {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+
+        .state-tag {
+            padding: 3px 6px;
+            color: var(--green);
+            background: var(--green-soft);
+            font: 9px "SFMono-Regular", Consolas, monospace;
+        }
+
+        .state-tag.saved {
+            color: #9c4729;
+            background: var(--orange-soft);
+        }
+
+        .register-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 4px;
+        }
+
+        .register {
+            min-width: 0;
+            padding: 5px 6px 4px;
+            border: 1px solid var(--line);
+            background: #fff;
+            transition: background .18s ease, border-color .18s ease;
+            cursor: help;
+        }
+
+        .register.changed {
+            background: #fff2e9;
+            border-color: #df916f;
+        }
+
+        .reg-name {
+            display: block;
+            color: var(--muted);
+            font-size: 9px;
+        }
+
+        .value {
+            display: block;
+            overflow: hidden;
+            margin-top: 3px;
+            color: var(--ink);
+            font-size: 9px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .register.changed .value {
+            color: #9c4729;
+            font-weight: 700;
+        }
+
+        .context-empty {
+            padding: 9px 8px;
+            border: 1px dashed var(--line);
+            color: var(--muted);
+            font-size: 10px;
+            line-height: 1.4;
+            background: #f5f7f3;
+        }
+
+        .task-stack-copy {
+            margin-top: 7px;
+            padding: 7px 8px;
+            border: 1px dashed #d4a07d;
+            background: #fff5ed;
+        }
+
+        .task-stack-copy-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            color: #9c4729;
+            font: 9px "SFMono-Regular", Consolas, monospace;
+        }
+
+        .task-stack-copy-address {
+            overflow-wrap: anywhere;
+            margin-top: 5px;
+            color: var(--ink);
+            font: 9px "SFMono-Regular", Consolas, monospace;
+        }
+
+        .task-stack-copy-detail {
+            margin: 3px 0 0;
+            color: var(--muted);
+            font-size: 9px;
+            line-height: 1.4;
+        }
+
+        .context-note {
+            margin: 5px 0 0;
+            color: var(--muted);
+            font-size: 9px;
+            line-height: 1.5;
+        }
+
+        .context-scope-note {
+            padding: 6px 7px;
+            border-left: 2px solid var(--blue);
+            background: var(--blue-soft);
+        }
+
+        .bootstrap-note {
+            padding-left: 7px;
+            border-left: 2px solid var(--green);
+            color: #15583f;
+        }
+
+        .color-legend {
+            display: grid;
+            gap: 5px;
+            margin: 9px 0 0;
+            padding: 8px 0 0;
+            border-top: 1px solid var(--line);
+            list-style: none;
+        }
+
+        .color-legend li {
+            display: flex;
+            align-items: flex-start;
+            gap: 7px;
+            color: var(--muted);
+            font-size: 9px;
+            line-height: 1.35;
+        }
+
+        .legend-swatch {
+            flex: 0 0 10px;
+            height: 10px;
+            margin-top: 1px;
+            border: 1px solid var(--line);
+            background: #fff;
+        }
+
+        .swatch-change {
+            border-color: #df916f;
+            background: #fff2e9;
+        }
+
+        .swatch-address {
+            border-color: var(--blue);
+            background: var(--blue-soft);
+        }
+
+        .swatch-task {
+            border-color: #a9cfbd;
+            background: #f5fbf7;
+        }
+
+        .swatch-host {
+            background: #f8faf8;
+        }
+
+        .swatch-return {
+            border-color: #e8b09b;
+            background: var(--orange-soft);
+        }
+
+        .swatch-copy {
+            border-style: dashed;
+            border-color: #d4a07d;
+            background: #fff5ed;
+        }
+
+        .explain {
+            margin-top: 10px;
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 9px;
+            align-items: center;
+            padding: 9px 12px;
+            background: #e9eee9;
+            border-left: 3px solid var(--green);
+        }
+
+        .explain p {
+            margin: 0;
+            color: #384743;
+            font-size: 11px;
+            line-height: 1.55;
+        }
+
+        .explain strong {
+            color: var(--ink);
+        }
+
+        .explain .warning {
+            color: #9c4729;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-top: 10px;
+            padding: 8px 10px;
+            background: var(--panel);
+            border: 1px solid var(--line);
+        }
+
+        .control-left,
+        .control-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            min-height: 30px;
+            padding: 0 10px;
+            border: 1px solid var(--line);
+            color: var(--ink);
+            background: #fff;
+            font-size: 11px;
+            font-weight: 650;
+            cursor: pointer;
+            transition: background .15s ease, border-color .15s ease, transform .15s ease;
+        }
+
+        .control-btn:hover:not(:disabled) {
+            background: var(--green-soft);
+            border-color: #8dbba5;
+            transform: translateY(-1px);
+        }
+
+        .control-btn:disabled {
+            color: #a1aaa5;
+            cursor: not-allowed;
+        }
+
+        .control-btn.primary {
+            color: white;
+            background: var(--green);
+            border-color: var(--green);
+        }
+
+        .control-btn.primary:hover:not(:disabled) {
+            background: #105f48;
+        }
+
+        .key-hint {
+            color: var(--muted);
+            font: 9px "SFMono-Regular", Consolas, monospace;
+        }
+
+        .progress-track {
+            flex: 1;
+            height: 3px;
+            max-width: 190px;
+            background: #e0e5df;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0;
+            background: var(--orange);
+            transition: width .25s ease;
+        }
+
+        @media (max-width:1120px) {
+                .workspace {
+                    grid-template-columns: 190px minmax(330px, 1fr);
+                }
+
+                .steps-panel {
+                    grid-row: 1 / span 2;
+                }
+
+                .center-panel {
+                    grid-column: 2;
+                }
+
+                .inspector {
+                    grid-column: 2;
+                    display: flex;
+                    flex-direction: column;
+                }
+
+                .inspector-section+.inspector-section {
+                    border-top: 1px solid var(--line);
+                    border-left: 0;
+                }
+            }
+
+        @media (max-width:760px) {
+                .topbar {
+                    grid-template-columns: 1fr;
+                    gap: 7px;
+                    padding: 9px 14px;
+                }
+
+                .top-meta {
+                    justify-content: flex-start;
+                    flex-wrap: wrap;
+                    white-space: normal;
+                }
+
+                .page-heading {
+                    display: block;
+                    padding: 0;
+                    border: 0;
+                }
+
+                .page-heading h1 {
+                    margin-bottom: 2px;
+                    font-size: 17px;
+                }
+
+                .page-heading p {
+                    white-space: normal;
+                }
+
+                main {
+                    padding: 20px 14px 24px;
+                }
+
+                .quick-guide {
+                    grid-template-columns: 1fr;
+                }
+
+                .quick-guide-note {
+                    grid-column: auto;
+                }
+
+                .workspace {
+                    grid-template-columns: 1fr;
+                }
+
+                .steps-panel {
+                    order: 0;
+                    grid-row: auto;
+                    padding: 11px;
+                }
+
+                .step-list {
+                    display: flex;
+                    overflow-x: auto;
+                    gap: 4px;
+                    padding-bottom: 2px;
+                }
+
+                .step-button {
+                    flex: 0 0 154px;
+                    min-height: 55px;
+                }
+
+                .steps-foot {
+                    display: none;
+                }
+
+                .center-panel {
+                    order: 1;
+                    grid-column: auto;
+                }
+
+                .inspector {
+                    order: 2;
+                    grid-column: auto;
+                    display: block;
+                }
+
+                .inspector-section+.inspector-section {
+                    border-top: 1px solid var(--line);
+                    border-left: 0;
+                }
+
+                .stack-viewport {
+                    min-height: 115px;
+                }
+
+                .explain {
+                    grid-template-columns: 1fr;
+                }
+
+                .controls {
+                    flex-wrap: wrap;
+                }
+
+                .control-left {
+                    width: 100%;
+                    justify-content: space-between;
+                }
+
+                .control-right {
+                    width: 100%;
+                    justify-content: space-between;
+                }
+
+                .progress-track {
+                    max-width: none;
+                }
+
+            }
+
+        @media (prefers-reduced-motion:reduce) {
+
+                *,
+                *::before,
+                *::after {
+                    animation-duration: .01ms !important;
+                    transition-duration: .01ms !important;
+                    scroll-behavior: auto !important;
+                }
+        }
+    </style>
+</head>
+
+<body>
+    <header class="topbar">
+        <div class="brand">
+            <div class="brand-mark" aria-hidden="true">H</div>
+            <div class="brand-name">Homeworld · Context Lab</div>
+        </div>
+        <div class="page-heading">
+            <h1>taskStart 如何启动并暂停任务</h1>
+            <p>taskStart 同步启动任务；首次 yield 建立可恢复现场，之后由调度器续跑。</p>
+        </div>
+        <div class="top-meta"><span>栈向低地址增长</span><span><code>S0</code> taskStart 原 ESP</span><span><code>S1</code>
+                yield 前 ESP</span><span><code>A</code> 续接地址</span><code>task.c</code></div>
+    </header>
+    <main>
+        <section class="quick-guide" aria-label="taskStart 主流程速览">
+            <p class="quick-guide-lead"><strong>先记住：</strong>这是协作式任务。taskStart 不只是登记入口；它会立刻运行任务，通常直到第一次 taskYield。</p>
+            <div class="quick-flow">
+                <div class="quick-flow-step"><strong>01 · CREATE</strong>分配 taskdata，设置入口、标志和调度周期。</div>
+                <div class="quick-flow-step"><strong>02 · BOOTSTRAP</strong>临时改写首次 yield 目标，<code>jmp</code> 进入任务。</div>
+                <div class="quick-flow-step"><strong>03 · SUSPEND</strong>首次 <code>yield</code> 保存现场；将来恢复到续接地址。</div>
+            </div>
+            <p class="quick-guide-note"><strong>术语：</strong><code>trampoline</code> 不是本项目里的函数名或变量名；我之前借用它概括“跳转后接收现场的代码段”。首次 yield 的具体代码是 <code>taskStart</code> 中 <code>taskContinued:</code> 标签及其后汇编：<code>pop eax</code> 取出返回地址 A、保存任务寄存器，然后恢复启动现场。调度器里的 <code>taskExecuteAllPending</code> 也有一个独立的 <code>taskContinued:</code> 标签。</p>
+            <p class="quick-guide-note"><strong>全局续接指针初值：</strong><code>taskFunctionContinue</code> 在程序加载时初始化为 <code>NULL</code>；正常启动时，<code>taskStartup</code> 会先调用 <code>taskExecuteAllPending(0)</code> 设置调度器续接点，所以通常进入 <code>taskStart</code> 时它已不是 <code>NULL</code>。左侧选择步骤；中间显示局部 static、当前状态、共享栈和关键代码；右侧显示 CPU 寄存器与 taskdata。</p>
+        </section>
+        <section class="workspace" aria-label="task 上下文交互演示">
+            <aside class="panel steps-panel">
+                <div class="panel-head">
+                    <h2 class="panel-title">执行步骤</h2><span id="stepCount" class="count">01 / 09</span>
+                </div>
+                <nav id="stepList" class="step-list" aria-label="选择执行步骤"></nav>
+                <div class="steps-foot">点击步骤跳转，或用键盘 <code>←</code> / <code>→</code> 单步。橙框表示相对上一步有变化，不代表错误；01 是起点。</div>
+            </aside>
+
+            <section class="panel center-panel" aria-live="polite">
+                <section class="static-area" aria-label="taskStart 函数局部 static 存储区">
+                    <div class="memory-labelrow">
+                        <h3>taskStart 局部 static 变量</h3>
+                    </div>
+                    <div id="bootstrapRegisters" class="static-slot-list" aria-label="taskStart 局部 static 的当前值"></div>
+                </section>
+                <header class="scene-head">
+                    <div class="scene-kicker"><span><i class="live-dot"></i>LIVE STATE</span><span
+                            id="phaseLabel">STARTUP</span></div>
+                    <h2 id="stepTitle"></h2>
+                    <p id="stepDescription" class="scene-desc"></p>
+                </header>
+                <div class="detail-grid">
+                    <div class="stack-area">
+                        <div class="stack-labelrow">
+                            <h3>共享栈现场</h3>
+                            <span class="stack-direction">栈向低地址增长 ↓</span>
+                        </div>
+                        <div class="stack-viewport">
+                            <div class="stack-high">高地址 · HIGH ADDRESS</div>
+                            <div id="stackSlots" class="stack-slots"></div>
+                            <div class="stack-low">低地址 · LOW ADDRESS</div>
+                        </div>
+                        <p id="stackCaption" class="stack-caption"></p>
+                    </div>
+                    <div class="code-strip">
+                        <div class="code-head"><span>本步骤关键代码 · 注释放在对应代码行上方</span><span id="codeOrigin">task.c / task.h</span></div>
+                        <pre id="codeLine"></pre>
+                    </div>
+                </div>
+            </section>
+
+            <aside class="panel inspector">
+                <section class="inspector-section">
+                    <div class="subhead-row">
+                        <h3 class="state-subhead">CPU 寄存器 <span class="state-tag">LIVE</span></h3><span
+                            class="count">切换前后</span>
+                    </div>
+                    <div id="cpuRegisters" class="register-grid"></div>
+                    <p class="context-note">“CPU 当前值”属于此刻正在执行的代码。切入任务或回到调度器时，它会改变。</p>
+                </section>
+                <section class="inspector-section">
+                    <div class="subhead-row">
+                        <h3 class="state-subhead">任务现场 <span class="state-tag saved">TASKDATA</span></h3>
+                    </div>
+                    <div id="savedRegisters" class="register-grid"></div>
+                    <div id="contextEmpty" class="context-empty" hidden>任务现场尚未捕获。首次 yield 跳到 taskStart 的
+                        <code>taskContinued:</code> 汇编段后，才会把 EIP、ESP 和寄存器写入 taskdata。</div>
+                    <p class="context-note context-scope-note">任务上下文保存 EIP、ESP、EBP、EBX、ECX、EDI、ESI；不保存 EAX、EDX、EFLAGS 或浮点/SIMD 状态。taskStart 另存的宿主现场只有 EBX、ESI、EDI、EBP、ESP。</p>
+                    <div id="taskStackCopy" class="task-stack-copy" hidden
+                        title="taskStart 使用 memRealloc 扩展 taskdata 分配块，在结构体后保存暂停任务的栈字节副本。">
+                        <div class="task-stack-copy-head"><span>任务栈字节副本</span><span>HEAP EXTENSION</span></div>
+                        <div class="task-stack-copy-address" title="taskData[handle] + 1 指向 taskdata 结构体末尾之后的扩展区。">
+                            taskData[handle] + 1</div>
+                        <p class="task-stack-copy-detail"><code
+                                title="taskStart 在首次 yield 时按 ESP 差值设置任务栈副本长度。">首次 nBytesStack = S0 - S1</code> ·
+                            复制自共享线程栈的 <code title="首次 yield 中，从 ESP=S1 到 taskStart 捕获的 ESP=S0，按字节复制保存。">[S1, S0)</code>
+                        </p>
+                        <p id="taskStackCopyStatus" class="task-stack-copy-detail"></p>
+                    </div>
+                    <p id="savedNote" class="context-note"></p>
+                    <ul class="color-legend" aria-label="框线和颜色说明">
+                        <li><span class="legend-swatch swatch-change"></span><span>橙色描边/底色：相对上一步发生变化，不是错误。</span></li>
+                        <li><span class="legend-swatch swatch-address"></span><span>蓝色：栈地址与边界标记。</span></li>
+                        <li><span class="legend-swatch swatch-task"></span><span>浅绿色区域：任务自己的活动栈帧。</span></li>
+                        <li><span class="legend-swatch swatch-host"></span><span>灰白区域：taskStart/调用者共享栈帧。</span></li>
+                        <li><span class="legend-swatch swatch-return"></span><span>浅橙实框：call 压入的返回地址槽 A。</span></li>
+                        <li><span class="legend-swatch swatch-copy"></span><span>橙色虚线框：保存在 taskdata 的栈副本。</span></li>
+                    </ul>
+                </section>
+            </aside>
+        </section>
+
+        <section class="explain" aria-live="polite">
+            <p id="whyText"></p><span id="whyTag" class="eyebrow">WHY IT MATTERS</span>
+        </section>
+
+        <div class="controls">
+            <div class="control-left">
+                <button id="prevButton" class="control-btn" type="button" aria-label="上一步">← <span>上一步</span></button>
+                <div class="progress-track" aria-hidden="true">
+                    <div id="progressFill" class="progress-fill"></div>
+                </div>
+                <button id="nextButton" class="control-btn primary" type="button" aria-label="下一步"><span>下一步</span>
+                    →</button>
+            </div>
+            <div class="control-right"><span id="stepName" class="key-hint"></span><button id="restartButton"
+                    class="control-btn" type="button">↺ <span>回到开始</span></button></div>
+        </div>
+    </main>
+    <script>
+        const registerNames = ["EIP", "ESP", "EBP", "EAX", "EBX", "ECX", "EDI", "ESI"];
+        const registerTooltips = {
+            cpu: {
+                EIP: "指令指针，记录 CPU 当前的执行位置，也就是接下来要取出的机器指令地址。普通顺序执行时它随指令向前推进；jmp、call、ret 和中断等控制流操作会把它改到新的代码位置。",
+                ESP: "栈指针，指向当前活动栈的栈顶；函数调用、返回、局部变量和临时保存值都会用到这块栈内存。32 位 x86 中 push/call 通常让 ESP 减 4，pop/ret 通常让它加 4，因此栈向低地址增长。",
+                EBP: "基址指针常用来标记当前函数栈帧的固定参照点，编译器可从它按偏移访问参数和局部变量；ESP 则会随 push/pop 变化。若编译器省略帧指针，EBP 也可像其他通用寄存器一样使用。",
+                EAX: "EAX 是通用数据寄存器，传统上叫累加器。算术指令常用它放操作数或结果，32 位函数也常用它返回整数或指针；编译器还会把它当临时寄存器。",
+                EBX: "EBX 是通用数据寄存器，没有固定绑定某种业务数据。编译器可用它暂存值或地址，供后续指令继续使用；具体含义取决于当前代码。",
+                ECX: "ECX 是通用数据寄存器，传统上常用作计数器。循环、字符串操作和某些移位指令会以特定形式使用它；普通代码也可把它当作临时值或地址。",
+                EDI: "EDI 是通用数据寄存器，传统上常用作目的索引。字符串类指令可隐式用它指向目标地址，普通代码也可用它保存计算值或地址。",
+                ESI: "ESI 是通用数据寄存器，传统上常用作源索引。字符串类指令可隐式用它指向来源地址，普通代码也可用它保存计算值或地址。"
+            },
+            taskdata: {
+                EIP: "任务续接地址。\n首次 yield 时保存 call 压入的 A；以后每次 yield 都更新成下一条要执行的位置。",
+                ESP: "任务暂停时的栈顶指针。\n首次 yield 的 call 返回地址 pop 出后记录为 S1。",
+                EBP: "任务暂停时的帧指针。\n恢复时与 ESP 一起重建任务的栈帧位置。",
+                EAX: "taskdata 没有保存 EAX 的字段。\n显示 — 表示这个寄存器值不会由任务上下文恢复。EDX 也没有保存字段。",
+                EBX: "任务 yield 时保存的通用寄存器值。\n调度器恢复任务时将它装回 CPU。",
+                ECX: "任务 yield 时保存的通用寄存器值。\n虽然是调用约定中的易失寄存器，本实现仍显式保存它。",
+                EDI: "任务 yield 时保存的目的索引寄存器值。\n恢复时装回，保持任务计算现场。",
+                ESI: "任务 yield 时保存的源索引寄存器值。\n恢复时装回，保持任务计算现场。"
+            }
+        };
+        const taskStartStaticSlots = [
+            { variable: "taskFunctionContinueSave" },
+            { variable: "taskESISave" },
+            { variable: "taskEDISave" },
+            { variable: "taskESPSave" },
+            { variable: "taskESPSaveInitial" },
+            { variable: "taskEBPSave" },
+            { variable: "taskEBXSave" }
+        ];
+        const taskFunctionContinueSaveStep = 1;
+        const taskStartSaveFirstStep = 2;
+        const taskStartSaveRestoreStep = 5;
+        const taskStackCopyFirstStep = 6;
+        const taskStartStaticValuesAt = (stepIndex) => ({
+            taskFunctionContinueSave: stepIndex >= taskFunctionContinueSaveStep ? "taskExecuteAllPending:taskContinued" : "NULL",
+            taskESISave: stepIndex >= taskStartSaveFirstStep ? "H_SI" : "—",
+            taskEDISave: stepIndex >= taskStartSaveFirstStep ? "H_DI" : "—",
+            taskESPSave: stepIndex >= taskStartSaveFirstStep ? "S0" : "—",
+            taskESPSaveInitial: stepIndex >= taskStartSaveFirstStep ? "S0" : "—",
+            taskEBPSave: stepIndex >= taskStartSaveFirstStep ? "H_BP" : "—",
+            taskEBXSave: stepIndex >= taskStartSaveFirstStep ? "H_BX" : "—"
+        });
+        const steps = [
+            {
+                title: "分配 taskdata 并设置调度字段",
+                short: "分配并初始化",
+                hint: "句柄、入口、周期",
+                phase: "SETUP",
+                description: "taskStart 分配 taskdata、占用一个 taskData 槽，并设置 flags、入口函数和 ticksPerCall。数组下标就是之后返回的 taskhandle。",
+                code: "newTask = memAlloc(sizeof(taskdata), ...);      // 分配 taskdata 上下文\nhandle = taskPointerAlloc();                    // 在 taskData[] 中申请槽位\ntaskData[handle] = newTask;                      // 让槽位指向 taskdata\nnewTask->flags = flags | TF_Allocated;           // 标记任务槽已占用\nnewTask->function = function;                    // 记录任务入口函数\nnewTask->ticks = 0;                              // 清零已累计的调度 tick\nnewTask->ticksPerCall = (udword)(period * taskFrequency); // 把周期换算成调度 tick 数",
+                origin: "task.c · taskStart",
+                cpu: { EIP: "taskStart+setup", ESP: "S0", EBP: "H_BP", EAX: "H_AX", EBX: "H_BX", ECX: "H_CX", EDI: "H_DI", ESI: "H_SI" },
+                saved: null,
+                savedNote: "flags、function 和调度周期已初始化；任务寄存器现场尚未捕获。",
+                stack: [
+                    { address: "S0 以上", name: "taskStart / caller 栈帧", detail: "S0 高地址侧已有的局部变量与调用返回链", value: "已有栈帧", kind: "host" },
+                    { address: "S0", name: "ESP 边界", detail: "概念上的基准；跳入任务前才写入 taskESPSaveInitial", value: "ESP = S0", kind: "marker" }
+                ],
+                stackCaption: "S0 是 taskStart 跳入任务前的 ESP 边界；框内表示 S0 以上地址的既有栈帧，不是 S0 加某个偏移。",
+                why: "稍后 taskStart 会保存 S0；首次 yield 后用 S0 - S1 估算任务栈副本的字节数。",
+                whyTag: "先初始化"
+            },
+            {
+                title: "把首次 yield 的目标改到 taskStart",
+                short: "设置首次落点",
+                hint: "改 continue，不改 EIP",
+                phase: "BOOTSTRAP",
+                description: "taskStart 保存旧的 taskFunctionContinue，再把它临时改成 taskStart 内 taskContinued 标签的地址。CPU 仍在执行 taskStart；变化的是下一次 yield 的去向。",
+                code: "taskFunctionContinueSave = taskFunctionContinue; // 暂存调度器原来的 yield 目标\nmov eax, OFFSET taskContinued                  ; EAX = taskStart 首次 yield 接收点地址\nmov [taskFunctionContinue], eax                ; 让第一次 taskYield 转到这里",
+                origin: "task.c · taskStart",
+                cpu: { EIP: "taskStart+set-continue", ESP: "S0", EBP: "H_BP", EAX: "&taskContinued", EBX: "H_BX", ECX: "H_CX", EDI: "H_DI", ESI: "H_SI" },
+                saved: null,
+                savedNote: "全局 taskFunctionContinue 暂时指向 taskStart 的 C 标签；taskdata 里的任务 EIP 仍未设置。",
+                stack: [
+                    { address: "S0 + …", name: "taskStart / caller 栈帧", detail: "尚未切换栈", value: "共享线程栈", kind: "host" },
+                    { address: "S0", name: "ESP 边界", detail: "下一步写入 taskESPSaveInitial", value: "ESP = S0", kind: "marker" }
+                ],
+                stackCaption: "这里改的是 taskFunctionContinue 的目标，不是 CPU EIP 或 ESP。OFFSET taskContinued 取得函数内标签的代码地址。",
+                why: "首次 yield 必须先回到 taskStart 捕获初始现场；taskStart 返回后才恢复原来的运行期目标。",
+                whyTag: "首次续接目标"
+            },
+            {
+                title: "保存 taskStart 现场，用 jmp 进入任务函数",
+                short: "jmp 到任务入口",
+                hint: "不压入函数返回地址",
+                phase: "BOOTSTRAP",
+                description: "taskStart 先通过 EAX 把 ESI、EDI、ESP、EBP、EBX 写进局部 static 槽，再装入入口地址。mov eax,function 只改变 EAX；紧接的 jmp eax 才把 EIP 改到 myTask entry。",
+                code: "mov eax, esi                    ; 用临时寄存器 EAX 中转宿主 ESI\nmov [taskESISave], eax          ; 把宿主 ESI 保存到 static\nmov eax, edi                    ; 用 EAX 中转宿主 EDI\nmov [taskEDISave], eax          ; 保存宿主 EDI\nmov eax, esp                    ; EAX = S0，即 taskStart 当前 ESP\nmov [taskESPSave], eax          ; 保存宿主 ESP，之后才能安全返回\n#if TASK_STACK_SAVE\nmov [taskESPSaveInitial], eax   ; 保留 S0，之后用它计算栈副本大小\n#endif\nmov eax, ebp                    ; 用 EAX 中转宿主 EBP\nmov [taskEBPSave], eax          ; 保存宿主 EBP\nmov eax, ebx                    ; 用 EAX 中转宿主 EBX\nmov [taskEBXSave], eax          ; 保存宿主 EBX\nmov eax, function               ; EAX = 任务入口地址\njmp eax                         ; 把 EIP 跳到入口；jmp 不压返回地址",
+                origin: "task.c · taskStart",
+                cpu: { EIP: "myTask entry", ESP: "S0", EBP: "H_BP", EAX: "function", EBX: "H_BX", ECX: "H_CX", EDI: "H_DI", ESI: "H_SI" },
+                saved: null,
+                savedNote: "jmp 前的 taskStart 寄存器暂存在静态变量；任务现场尚未写入 taskdata。",
+                stack: [
+                    { address: "S0 + …", name: "taskStart / caller 栈帧", detail: "调用者返回地址仍在更高地址处", value: "共享线程栈", kind: "host" },
+                    { address: "S0", name: "任务入口开始", detail: "jmp 没有 push 返回地址", value: "ESP 不变", kind: "marker" }
+                ],
+                stackCaption: "入口和 taskStart 共用当前线程栈。任务函数序言之后，ESP 才会向低地址移动。",
+                why: "EAX 在这里是通用临时寄存器；x86 也允许直接 mov [taskESISave], esi，不存在必须经 EAX 的规则。源码用 EAX 中转后，最后的 jmp eax 才真正改变 EIP。",
+                whyTag: "EAX 暂存，jmp 改 EIP"
+            },
+            {
+                title: "任务运行到第一次 taskYield",
+                short: "任务入口执行",
+                hint: "任务栈帧占用共享栈",
+                phase: "TASK RUNS",
+                description: "任务执行入口代码并建立自己的栈帧。这里用 A 作为图示记号（不是源码变量），表示 taskYield 展开后的 call 指令后面那条机器指令地址，也就是返回地址；此刻 call 尚未执行，A 还没有压栈。",
+                code: "// taskStart 用 jmp 进入；这里没有 call 返回地址\nvoid myTask(void)\n{\n    taskYield(0); // taskYield 宏会间接 call taskFunctionContinue",
+                origin: "task body",
+                cpu: { EIP: "myTask: taskYield", ESP: "S1", EBP: "T_BP", EAX: "T_AX", EBX: "T_BX", ECX: "T_CX", EDI: "T_DI", ESI: "T_SI" },
+                saved: null,
+                savedNote: "CPU 正执行任务；还没有进入 taskStart 内的 taskContinued，所以 taskdata 尚无初始现场。",
+                stack: [
+                    { address: "S0 + …", name: "taskStart / caller 栈帧", detail: "高地址一侧，当前仍留在共享栈上", value: "taskStart 栈帧", kind: "host" },
+                    { address: "[S1, S0)", name: "任务栈帧与嵌套调用", detail: "序言建立栈帧和局部数据；A = call 后下一条指令地址，此刻还未压栈", value: "将复制保存", kind: "task" },
+                    { address: "S1", name: "ESP · call 前", detail: "此刻任务栈顶", value: "ESP = S1", kind: "marker" }
+                ],
+                stackCaption: "函数序言是入口建立栈帧的指令（常见 push ebp、mov ebp,esp、预留局部空间），不是“栈帧头”本身；调用链是嵌套 call 形成的返回地址和被调函数栈帧。myTask 入口由 jmp 进入，所以没有普通入口返回地址；A 是 taskYield 的 call 后续地址，下一步才压到 S1 - 4，不属于 [S1, S0)。",
+                why: "任务栈稍后会被其他任务复用；必须复制栈内容，光保存 ESP/EBP 指针并不能保存指针指向的数据。",
+                whyTag: "共享栈"
+            },
+            {
+                title: "间接 call 自动压入返回地址 A",
+                short: "call continue",
+                hint: "ESP 从 S1 变成 S1 - 4",
+                phase: "YIELD · CALL",
+                description: "taskYield 展开成对 taskFunctionContinue 的间接 call。32 位 x86 的 call 会先把 call 后一条指令的地址 A 写到活动栈（ESP 从 S1 减到 S1 - 4），再把 EIP 改到目标；A 在栈上，EAX 仍是任务原来的值。",
+                code: "// taskYield 宏通过当前续接指针执行间接 call\n#define taskYield(n) \\\n    ((void (*)(void))taskFunctionContinue)()\n\ncall [taskFunctionContinue] ; 把 A 压到 [S1 - 4]，再跳到目标地址",
+                origin: "task.h · macro expansion",
+                cpu: { EIP: "taskStart:taskContinued", ESP: "S1 - 4", EBP: "T_BP", EAX: "T_AX", EBX: "T_BX", ECX: "T_CX", EDI: "T_DI", ESI: "T_SI" },
+                saved: null,
+                savedNote: "A 暂存在活动栈顶；taskdata 尚未更新，EAX 仍为 T_AX。",
+                stack: [
+                    { address: "S0 + …", name: "taskStart / caller 栈帧", detail: "共享栈高地址部分", value: "taskStart 栈帧", kind: "host" },
+                    { address: "[S1, S0)", name: "任务帧 / 局部数据", detail: "仍在共享栈", value: "待复制", kind: "task" },
+                    { address: "S1", name: "call 前 ESP", detail: "返回地址将压到它下方", value: "边界", kind: "marker" },
+                    { address: "S1 - 4", name: "call 返回地址 A", detail: "恢复时要回到 taskYield 后一条指令", value: "栈顶 · ESP", kind: "return" }
+                ],
+                stackCaption: "32 位地址占 4 字节，因此 ESP 从 S1 减到 S1 - 4；A 暂时位于栈顶。",
+                why: "call 提供了天然的续接点 A。若使用 jmp 调 continue，就没有返回地址，taskContinued 段便没有 A 可保存为任务稍后的续接位置。",
+                whyTag: "CPU 自动 push"
+            },
+            {
+                title: "taskContinued pop 出 A，并保存任务寄存器",
+                short: "捕获初始现场",
+                hint: "ESP 回到 S1，EIP 保存为 A",
+                phase: "YIELD · SAVE",
+                description: "上一步的 call 把 A 压在 [ESP]。现在 taskContinued 汇编执行 pop eax，从栈顶读出 A 放进 EAX，同时让 ESP 回到 S1；随后把 A 写入 taskdata.eip，并保存 EBX、ECX、EDI、ESI、ESP、EBP。",
+                code: "taskContinued:\n    mov edx, handle                        ; EDX 先取得 taskData[] 下标\n    shl edx, 2                             ; 32 位指针占 4 字节，换算成槽位偏移\n    add edx, OFFSET taskData               ; 得到 taskData[handle] 槽位地址\n    mov edx, [edx]                         ; EDX = taskdata 结构体指针\n    pop eax                                ; 从栈顶取出 A；ESP 回到 S1\n    mov [edx + TOF_Context + 24], eax      ; 把 A 保存为 taskdata.eip\n    mov eax, ebx\n    mov [edx + TOF_Context + 0], eax       ; 保存任务 EBX\n    mov eax, ecx\n    mov [edx + TOF_Context + 4], eax       ; 保存任务 ECX\n    mov eax, edi\n    mov [edx + TOF_Context + 8], eax       ; 保存任务 EDI\n    mov eax, esi\n    mov [edx + TOF_Context + 12], eax      ; 保存任务 ESI\n    mov eax, esp\n    mov [edx + TOF_Context + 16], eax      ; 保存任务 ESP = S1\n    mov eax, ebp\n    mov [edx + TOF_Context + 20], eax      ; 保存任务 EBP",
+                origin: "task.c · taskStart / taskContinued",
+                cpu: { EIP: "taskStart:taskContinued+save", ESP: "S1", EBP: "T_BP", EAX: "A", EBX: "T_BX", ECX: "T_CX", EDI: "T_DI", ESI: "T_SI" },
+                saved: { EIP: "A", ESP: "S1", EBP: "T_BP", EAX: "—", EBX: "T_BX", ECX: "T_CX", EDI: "T_DI", ESI: "T_SI" },
+                savedNote: "taskdata 现在持有首次续接点和关键寄存器。EAX 是这段现场保存代码使用的临时寄存器，不在保存字段中。",
+                stack: [
+                    { address: "S0 + …", name: "taskStart / caller 栈帧", detail: "共享栈高地址部分", value: "taskStart 栈帧", kind: "host" },
+                    { address: "[S1, S0)", name: "任务帧 / 局部数据", detail: "仍在共享栈，下一步复制", value: "ESP = S1", kind: "task" },
+                    { address: "S1", name: "pop 后 ESP", detail: "当前栈顶回到此边界", value: "边界", kind: "marker" },
+                    { address: "S1 - 4", name: "A 已 pop", detail: "该地址现在在 EAX 和即将写入的 taskdata.eip 中", value: "空出", kind: "empty" }
+                ],
+                stackCaption: "pop 使 ESP 从 S1 - 4 回到 S1。A 单独作为 EIP 保存，不留在任务栈副本里。",
+                why: "如果不 pop，恢复后栈顶会残留这次 call 的返回地址；若不单独保存 A，任务就没有重启位置。",
+                whyTag: "pop + 保存 EIP"
+            },
+            {
+                title: "恢复 taskStart 现场，复制任务栈并返回 handle",
+                short: "保存栈副本",
+                hint: "taskStart 安全返回给调用者",
+                phase: "TASK CREATED",
+                description: "恢复 taskStart 实际保存的宿主寄存器和 ESP，再算首次栈差并用 memRealloc 扩展 taskdata、复制栈字节。最后恢复旧 continue 指针并返回 handle。",
+                code: "restore host EBX/ESI/EDI/EBP/ESP     // taskStart 恢复宿主现场，回到自己的栈上\ntaskESPDiff = (sdword)(taskESPSaveInitial - taskData[handle]->esp); // 字节数 = S0 - S1\nif (taskESPDiff > 0) {\n  taskData[handle] = memRealloc(taskData[handle], sizeof(taskdata) + taskESPDiff, \"task+Stack\", NonVolatile); // 扩展 taskdata 分配块\n  memcpy(\n      (ubyte *)(taskData[handle] + 1),      // 目标：taskdata 结构体之后的第一个字节\n      ((ubyte *)taskData[handle]->esp),     // 来源：S1，任务栈仍在共享栈上\n      taskESPDiff);                         // 长度：[S1, S0) 区间的字节数\n}\ntaskData[handle]->nBytesStack = taskESPDiff; // 记录副本长度，供调度器恢复\ntaskFunctionContinue = taskFunctionContinueSave; // 恢复调度器原来的 yield 目标\nreturn handle;                                  // taskStart 初始化完成",
+                origin: "task.c · taskStart",
+                cpu: { EIP: "taskStart+return", ESP: "S0", EBP: "H_BP", EAX: "handle", EBX: "H_BX", ECX: "?", EDI: "H_DI", ESI: "H_SI" },
+                saved: { EIP: "A", ESP: "S1", EBP: "T_BP", EAX: "—", EBX: "T_BX", ECX: "T_CX", EDI: "T_DI", ESI: "T_SI" },
+                savedNote: "TASKDATA 中的 EIP、ESP 和寄存器构成首次 yield 的恢复现场。",
+                stack: [
+                    { address: "S0 + …", name: "taskStart / caller 栈帧", detail: "taskStart 原 ESP 已恢复", value: "活动栈", kind: "host" },
+                    { address: "[S1, S0)", name: "任务帧 / 局部数据", detail: "暂时还留在共享线程栈，可能被覆盖", value: "taskStart 即将复制", kind: "task" }
+                ],
+                stackCaption: "taskStart 的已保存宿主寄存器和原 ESP 已恢复。栈字节副本显示在右侧 TASKDATA 扩展区，不属于这张共享栈图。",
+                why: "先恢复 taskStart 原 ESP 才能继续执行正常 C 代码；复制栈内容让任务暂停期间共享栈可被其他任务使用。",
+                whyTag: "启动完成"
+            },
+            {
+                title: "后续调度：先把任务栈副本写回",
+                short: "调度器准备恢复",
+                hint: "恢复栈内容，但 CPU 仍在调度器",
+                phase: "SCHEDULER",
+                description: "任务未暂停且本轮到期后进入恢复流程：TF_OncePerFrame 每次调度执行一次，普通任务按 ticksPerCall 累积。调度器仍在自己的栈上先写回首次栈副本，再切换 ESP。",
+                code: "dest = (udword *)taskData[taskCurrentTask]->esp; // 目标：任务栈地址 S1\nsrc = (udword *)(taskData[taskCurrentTask] + 1);  // 来源：taskdata 后面保存的栈副本\nfor (nBytesStack / 4) *dest++ = *src++;           // 按 4 字节为单位写回栈",
+                origin: "task.c · taskExecuteAllPending",
+                cpu: { EIP: "scheduler:restore-stack", ESP: "R0", EBP: "R_BP", EAX: "R_AX", EBX: "R_BX", ECX: "R_CX", EDI: "R_DI", ESI: "R_SI" },
+                saved: { EIP: "A", ESP: "S1", EBP: "T_BP", EAX: "—", EBX: "T_BX", ECX: "T_CX", EDI: "T_DI", ESI: "T_SI" },
+                savedNote: "任务上下文仍在 taskdata 中；复制阶段尚未切换 CPU 的 ESP。",
+                stack: [
+                    { address: "R0 + …", name: "调度器 / 当前调用栈", detail: "当前活动栈", value: "ESP = R0", kind: "host" },
+                    { address: "[S1, S0)", name: "任务旧栈地址", detail: "逐字节写回 taskdata 保存的副本", value: "恢复中", kind: "task" }
+                ],
+                stackCaption: "此时 ESP 仍是调度器的 R0。复制源位于右侧 TASKDATA 扩展区；若先切换到 S1 再复制，调度器会失去安全栈。",
+                why: "必须先在调度器栈上完成栈字节复制，之后才能把 ESP 切换回任务栈。",
+                whyTag: "先 copy，后切栈"
+            },
+            {
+                title: "恢复寄存器并 jmp 到 A",
+                short: "任务继续执行",
+                hint: "从 taskYield 后一条指令恢复",
+                phase: "RESUME",
+                description: "调度器装回 taskdata 保存的寄存器、ESP=S1 和 EBP，再取 EIP=A 并 jmp。执行流从 taskYield 的 call 后一条指令继续。",
+                code: "restore EBX/ECX/EDI/ESI/ESP/EBP ; 装回任务保存的寄存器现场\nmov edx, [taskdata + EIP]            ; EDX = 保存的续接地址 A\njmp edx                              ; 从 taskYield 的 call 后继续执行",
+                origin: "task.c · taskExecuteAllPending",
+                cpu: { EIP: "A · yield 后", ESP: "S1", EBP: "T_BP", EAX: "未保证", EBX: "T_BX", ECX: "T_CX", EDI: "T_DI", ESI: "T_SI" },
+                saved: { EIP: "A", ESP: "S1", EBP: "T_BP", EAX: "—", EBX: "T_BX", ECX: "T_CX", EDI: "T_DI", ESI: "T_SI" },
+                savedNote: "刚恢复时受保存的寄存器与 taskdata 一致；EAX 未被 taskdata 保存/恢复，不应依赖其旧值。",
+                stack: [
+                    { address: "S0 + …", name: "S0 以上的当前线程栈", detail: "不属于 taskdata 保存的任务栈副本", value: "不由任务上下文保存", kind: "host" },
+                    { address: "[S1, S0)", name: "任务帧 / 局部数据", detail: "已从 taskdata 副本恢复", value: "原样复现", kind: "task" },
+                    { address: "S1", name: "任务 ESP", detail: "与 pop 后保存的一致", value: "活动栈顶", kind: "marker" }
+                ],
+                stackCaption: "只恢复任务自己的 [S1, S0) 栈副本；S0 以上的线程栈不随任务保存。jmp 不压栈也不 pop，直接跳到 A。",
+                why: "若从 function 入口重新开始，会重复初始化和已完成工作；保存 EIP 并 jmp 才能回到精确续接点。",
+                whyTag: "恢复到 A"
+            }
+        ];
+
+        let current = 0;
+        const $ = (id) => document.getElementById(id);
+        const stepList = $("stepList");
+
+        function slotMarkup(slot, index, previousSlots) {
+            const previous = previousSlots && previousSlots[index];
+            const changed = Boolean(previous) && (previous.address !== slot.address || previous.name !== slot.name || previous.value !== slot.value || previous.detail !== slot.detail);
+            const changedClass = changed ? " changed" : "";
+            const address = slot.address === "S0 + …" ? "S0 以上" : slot.address;
+
+            if (slot.kind === "marker") {
+                return `<div class="stack-boundary${changedClass}">
+            <span class="boundary-address">${address}</span>
+        <span class="boundary-rule"></span>
+        <span class="boundary-label">${slot.name} · ${slot.value}</span>
+    </div>`;
+            }
+
+            if (slot.kind === "return" || slot.kind === "empty") {
+                return `<div class="stack-cell slot-${slot.kind}${changedClass}">
+        <div class="region-meta"><span class="stack-address">${address}</span><span>${slot.value}</span></div>
+        <span class="slot-name">${slot.name}</span><span class="slot-detail">${slot.detail}</span>
+    </div>`;
+            }
+
+            const savedArea = slot.kind === "saved";
+            return `${savedArea ? `<div class="stack-region-start"><span>ACTUAL STACK ENDS</span><span>SEPARATE COPY</span></div>` : ""}
+    <div class="stack-region slot-${slot.kind}${changedClass}">
+        <div><span class="stack-address">${address}</span><span class="slot-name">${slot.name}</span><span class="slot-detail">${slot.detail}</span></div>
+        <span class="region-meta">${slot.value}</span>
+    </div>`;
+        }
+
+        function renderRegisters(container, values, previous, names = registerNames, owner = "cpu") {
+            if (!values) {
+                container.innerHTML = "";
+                return;
+            }
+            container.innerHTML = names.map((name) => {
+                const value = values[name] ?? "—";
+                const changed = Boolean(previous) && (previous[name] ?? "—") !== value;
+                const help = registerTooltips[owner][name];
+                return `<div class="register${changed ? " changed" : ""}" title="${help}" aria-label="${name}: ${help}"><span class="reg-name">${name}</span><span class="value">${value}</span></div>`;
+            }).join("");
+        }
+
+        function renderTaskStartStaticSlots(container, values, previous) {
+            container.innerHTML = taskStartStaticSlots.map(({ variable }) => {
+                const value = values[variable] ?? "—";
+                const changed = Boolean(previous) && (previous[variable] ?? "—") !== value;
+                return `<div class="static-slot${changed ? " changed" : ""}" aria-label="${variable}: ${value}"><code>${variable}</code><strong class="static-slot-value">${value}</strong></div>`;
+            }).join("");
+        }
+
+        function renderAnnotatedCode(container, code) {
+            const escapeHtml = (text) => text.replace(/[&<>"']/g, (character) => ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                "\"": "&quot;",
+                "'": "&#39;"
+            })[character]);
+
+            container.innerHTML = code.split("\n").map((line) => {
+                const trimmedLine = line.trimStart();
+                if (trimmedLine.startsWith("//") || trimmedLine.startsWith(";")) {
+                    return '<span class="code-comment">' + escapeHtml(line) + "</span>";
+                }
+
+                const slashComment = line.indexOf("//");
+                const asmCommentStart = line.search(/\s+;/);
+                const commentIndex = slashComment >= 0
+                    ? slashComment
+                    : asmCommentStart >= 0 ? line.indexOf(";", asmCommentStart) : -1;
+
+                if (commentIndex < 0) {
+                    return escapeHtml(line);
+                }
+
+                const indentation = line.match(/^\s*/)[0];
+                const codeLine = line.slice(0, commentIndex).trimEnd();
+                const commentLine = indentation + line.slice(commentIndex).trimStart();
+                return '<span class="code-comment">'
+                    + escapeHtml(commentLine)
+                    + "</span>\n"
+                    + escapeHtml(codeLine);
+            }).join("\n");
+        }
+
+        function render() {
+            const step = steps[current];
+            const previous = current > 0 ? steps[current - 1] : null;
+            $("stepCount").textContent = `${String(current + 1).padStart(2, "0")} / ${String(steps.length).padStart(2, "0")}`;
+            $("stepTitle").textContent = step.title;
+            $("stepDescription").textContent = step.description;
+            $("phaseLabel").textContent = step.phase;
+            renderAnnotatedCode($("codeLine"), step.code);
+            $("codeOrigin").textContent = step.origin;
+            $("stackCaption").textContent = step.stackCaption;
+            $("whyText").innerHTML = `<strong>${step.whyTag}:</strong> ${step.why}`;
+            $("stepName").textContent = step.short;
+            $("progressFill").style.width = `${((current + 1) / steps.length) * 100}%`;
+            $("prevButton").disabled = current === 0;
+            $("nextButton").disabled = current === steps.length - 1;
+            $("contextEmpty").hidden = Boolean(step.saved);
+            $("savedNote").hidden = !step.saved;
+            $("savedNote").textContent = step.savedNote;
+            const staticValues = taskStartStaticValuesAt(current);
+            const previousStaticValues = current > 0 ? taskStartStaticValuesAt(current - 1) : null;
+            renderTaskStartStaticSlots($("bootstrapRegisters"), staticValues, previousStaticValues);
+
+            const hasTaskStackCopy = current >= taskStackCopyFirstStep;
+            $("taskStackCopy").hidden = !hasTaskStackCopy;
+            if (hasTaskStackCopy) {
+                $("taskStackCopyStatus").textContent = current === taskStackCopyFirstStep
+                    ? "首次 yield 后，taskStart 用 memRealloc 扩展 taskdata，把共享栈 [S1, S0) 复制到这里。"
+                    : current === taskStackCopyFirstStep + 1
+                        ? "这是首次栈快照的第一次恢复：调度器先在自己的栈上复制回 [S1, S0)，再切换到任务栈。"
+                        : "实现边界：后续 yield 会更新 ESP/EIP，但 nBytesStack 长度沿用首次测量；图中的固定范围只表示首次快照这一轮。";
+            }
+            $("stackSlots").innerHTML = step.stack.map((slot, i) => slotMarkup(slot, i, previous && previous.stack)).join("");
+            renderRegisters($("cpuRegisters"), step.cpu, previous && previous.cpu, registerNames, "cpu");
+            const emptyTaskContext = Object.fromEntries(registerNames.map((name) => [name, "—"]));
+            const previousTaskContext = current === taskStartSaveRestoreStep ? emptyTaskContext : previous && previous.saved;
+            renderRegisters($("savedRegisters"), step.saved, previousTaskContext, registerNames, "taskdata");
+            stepList.querySelectorAll(".step-button").forEach((button, index) => {
+                if (index === current) button.setAttribute("aria-current", "step");
+                else button.removeAttribute("aria-current");
+            });
+            const active = stepList.querySelector(`[data-step="${current}"]`);
+            if (active && window.matchMedia("(max-width: 760px)").matches) active.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+        }
+
+        steps.forEach((step, index) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "step-button";
+            button.dataset.step = index;
+            button.innerHTML = `<span class="step-no">${String(index + 1).padStart(2, "0")}</span><span class="step-label">${step.short}<span class="step-hint">${step.hint}</span></span>`;
+            button.addEventListener("click", () => { current = index; render(); });
+            stepList.appendChild(button);
+        });
+
+        $("prevButton").addEventListener("click", () => { if (current > 0) { current--; render(); } });
+        $("nextButton").addEventListener("click", () => { if (current < steps.length - 1) { current++; render(); } });
+        $("restartButton").addEventListener("click", () => { current = 0; render(); });
+        document.addEventListener("keydown", (event) => {
+            if (event.altKey || event.ctrlKey || event.metaKey || event.target.matches("input,textarea,select,[contenteditable=true]")) return;
+            if (event.key === "ArrowRight") { event.preventDefault(); if (current < steps.length - 1) { current++; render(); } }
+            if (event.key === "ArrowLeft") { event.preventDefault(); if (current > 0) { current--; render(); } }
+            if (event.key === "Home") { current = 0; render(); }
+            if (event.key === "End") { current = steps.length - 1; render(); }
+        });
+        render();
+    </script>
+</body>
+
+</html>

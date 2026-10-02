@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10231f">
+  <title>taskExecuteAllPending · 调度循环实验台</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #162622;
+      --muted: #64746d;
+      --paper: #f3f5f0;
+      --panel: #fffefa;
+      --line: #dce3dc;
+      --forest: #12654f;
+      --forest-dark: #10231f;
+      --mint: #dff2e8;
+      --blue: #286b91;
+      --blue-soft: #e1eff5;
+      --amber: #a46a06;
+      --amber-soft: #fff1d0;
+      --coral: #b74c36;
+      --coral-soft: #fae6df;
+      --shadow: 0 12px 32px rgba(17, 38, 32, .07);
+      font-family: Inter, "Avenir Next", Avenir, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse at 85% 0%, rgba(43, 125, 97, .09), transparent 34rem),
+        linear-gradient(rgba(20, 92, 69, .025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(20, 92, 69, .025) 1px, transparent 1px), var(--paper);
+      background-size: auto, 24px 24px, 24px 24px, auto;
+    }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    code, pre, .mono, .eyebrow, .step-index, .metric-value, .slot-id { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    .shell { width: min(1480px, calc(100% - 36px)); margin: 0 auto; }
+    .masthead {
+      color: #f4f7f2;
+      background: var(--forest-dark);
+      border-bottom: 3px solid #63b48f;
+    }
+    .mast-inner { display: flex; align-items: center; gap: 18px; padding: 17px 0 16px; }
+    .brand {
+      display: flex; align-items: center; gap: 9px; flex: 0 0 auto;
+      padding-right: 18px; border-right: 1px solid rgba(255,255,255,.2);
+    }
+    .brand-mark { display: grid; place-items: center; width: 31px; height: 31px; color: #10231f; background: #92d3b2; font: 700 18px Georgia, serif; transform: rotate(-4deg); }
+    .brand-name { color: #e9f2ec; font: 700 13px Georgia, serif; white-space: nowrap; }
+    .heading { min-width: 0; flex: 1; }
+    .heading h1 { margin: 0; font: 500 clamp(21px, 2.4vw, 31px)/1.1 Georgia, "Times New Roman", serif; letter-spacing: -.025em; }
+    .heading p { margin: 5px 0 0; color: #b6c9bf; font-size: 12px; }
+    .head-links { display: flex; gap: 8px; flex: 0 0 auto; }
+    .head-links a { padding: 7px 9px; color: #d7e9de; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; font-size: 11px; text-decoration: none; }
+    .head-links a:hover { background: rgba(255,255,255,.1); }
+    main { padding: 20px 0 40px; }
+    .intro {
+      display: grid; grid-template-columns: minmax(250px, .85fr) minmax(0, 1.55fr); gap: 18px;
+      align-items: center; margin-bottom: 15px; padding: 15px 18px; background: rgba(255,254,250,.84);
+      border: 1px solid var(--line); border-left: 4px solid var(--forest); box-shadow: 0 5px 18px rgba(20,40,30,.035);
+    }
+    .intro h2 { margin: 0 0 5px; font: 600 15px Georgia, serif; }
+    .intro p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+    .route { display: flex; align-items: center; justify-content: space-between; gap: 7px; }
+    .route-node { min-width: 0; flex: 1; padding: 8px 9px; border: 1px solid #dfe6df; background: #f8faf6; border-radius: 4px; text-align: center; }
+    .route-node b { display: block; color: var(--forest); font: 700 10px "SFMono-Regular", Consolas, monospace; white-space: nowrap; }
+    .route-node span { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; }
+    .route-arrow { color: #a4b4a9; font-size: 13px; }
+    .top-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(300px, .8fr); gap: 14px; align-items: stretch; }
+    .panel { min-width: 0; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 15px 11px; border-bottom: 1px solid var(--line); }
+    .panel-head h2, .panel-head h3 { margin: 0; font: 700 11px "SFMono-Regular", Consolas, monospace; letter-spacing: .09em; text-transform: uppercase; }
+    .eyebrow { color: var(--forest); font-size: 9px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+    .panel-body { padding: 13px 15px 15px; }
+    .controls { display: flex; align-items: end; flex-wrap: wrap; gap: 9px 13px; padding: 0 0 12px; border-bottom: 1px solid #e8ede7; }
+    .field { display: grid; gap: 4px; }
+    .field label { color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    .field input, .field select { width: 100%; min-width: 72px; padding: 7px 8px; color: var(--ink); background: #fbfcf9; border: 1px solid #d8e1d9; border-radius: 4px; font-size: 12px; }
+    .field.small { width: 94px; }
+    .field.medium { width: 130px; }
+    .toggle { display: flex; align-items: center; gap: 6px; min-height: 31px; color: var(--muted); font-size: 10px; }
+    .toggle input { accent-color: var(--forest); }
+    .button-row { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+    .btn { padding: 7px 10px; color: #315149; background: #f3f7f2; border: 1px solid #ccd9cf; border-radius: 4px; font-size: 10px; font-weight: 700; transition: .15s ease; }
+    .btn:hover:not(:disabled) { background: #e5f0e8; border-color: #9cbdab; }
+    .btn:disabled { cursor: default; opacity: .42; }
+    .btn.primary { color: #fff; background: var(--forest); border-color: var(--forest); }
+    .btn.primary:hover:not(:disabled) { background: #0e513f; }
+    .btn.icon { min-width: 34px; padding-inline: 8px; font-size: 13px; }
+    .flowline { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; padding: 15px 0 11px; }
+    .flow-node { position: relative; padding: 0 8px; color: #829088; text-align: center; }
+    .flow-node:not(:last-child)::after { position: absolute; z-index: 0; top: 12px; right: -50%; width: 100%; height: 1px; background: #d9e3dc; content: ""; }
+    .flow-dot { position: relative; z-index: 1; display: grid; place-items: center; width: 25px; height: 25px; margin: 0 auto 5px; color: #718078; background: #f5f7f4; border: 1px solid #d7e0d8; border-radius: 50%; font: 700 9px monospace; }
+    .flow-node strong { display: block; font: 700 9px "SFMono-Regular", Consolas, monospace; }
+    .flow-node span { display: block; margin-top: 2px; font-size: 8px; line-height: 1.3; }
+    .flow-node.active { color: var(--forest); }
+    .flow-node.active .flow-dot { color: #fff; background: var(--forest); border-color: var(--forest); box-shadow: 0 0 0 4px var(--mint); }
+    .flow-node.done .flow-dot { color: #fff; background: #55957a; border-color: #55957a; }
+    .flow-node.done:not(:last-child)::after { background: #72b291; }
+    .live-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; margin: 3px 0 13px; }
+    .metric { padding: 8px 9px; background: #f5f8f4; border: 1px solid #e0e8e0; border-radius: 4px; }
+    .metric-label { display: block; color: var(--muted); font-size: 8px; letter-spacing: .07em; text-transform: uppercase; }
+    .metric-value { display: block; margin-top: 4px; color: var(--ink); font-size: 13px; font-weight: 700; }
+    .current-task { min-height: 142px; display: grid; grid-template-columns: minmax(190px, .88fr) minmax(0, 1.2fr); gap: 14px; padding: 13px 14px; color: #edf6f0; background: #172d27; border-radius: 5px; }
+    .current-copy { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; }
+    .current-label { margin-bottom: 7px; color: #9fcab2; font: 700 9px monospace; letter-spacing: .11em; text-transform: uppercase; }
+    .current-copy h3 { margin: 0 0 6px; font: 500 18px Georgia, serif; }
+    .current-copy p { max-width: 510px; margin: 0; color: #c4d5cc; font-size: 10px; line-height: 1.55; }
+    .snippet-wrap { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: 8px 11px; background: #10221e; border: 1px solid rgba(255,255,255,.12); border-radius: 4px; }
+    .snippet-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 5px; color: #90ad9e; font-size: 8px; }
+    .snippet-wrap pre { overflow-x: auto; margin: 0; color: #d9f1e3; font-size: 10px; line-height: 1.55; white-space: pre-wrap; }
+    .source-ref { color: #a5d7bc; text-decoration: none; }
+    .source-ref:hover { text-decoration: underline; }
+    .slot-panel { margin-top: 14px; }
+    .slot-panel .panel-head { align-items: baseline; }
+    .slot-panel .panel-head p { margin: 0; color: var(--muted); font-size: 9px; }
+    .slot-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .slot-card { position: relative; min-width: 0; padding: 10px 11px 9px; background: #fff; border: 1px solid var(--line); border-radius: 5px; cursor: pointer; transition: border-color .15s, box-shadow .15s, transform .15s; }
+    .slot-card:hover { border-color: #9dbdad; transform: translateY(-1px); }
+    .slot-card.selected { border-color: var(--forest); box-shadow: 0 0 0 2px rgba(18,101,79,.12); }
+    .slot-card.current { border-left: 3px solid #238268; }
+    .slot-card.skipped { background: #f7f8f6; }
+    .slot-card.stopped { background: #fff7f4; border-color: #e6b4a5; }
+    .slot-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .slot-id { color: #718179; font-size: 9px; }
+    .slot-name { overflow: hidden; margin: 3px 0 8px; font: 600 12px Georgia, serif; text-overflow: ellipsis; white-space: nowrap; }
+    .badge { padding: 3px 6px; color: #48645a; background: #eaf2ec; border-radius: 20px; font-size: 8px; white-space: nowrap; }
+    .badge.frame { color: #286b91; background: var(--blue-soft); }
+    .badge.paused { color: var(--amber); background: var(--amber-soft); }
+    .badge.empty { color: #777; background: #eceeeb; }
+    .badge.exit { color: var(--coral); background: var(--coral-soft); }
+    .slot-data { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding-top: 7px; border-top: 1px solid #edf0ec; }
+    .slot-data span { display: block; color: var(--muted); font-size: 8px; }
+    .slot-data b { display: block; overflow: hidden; margin-top: 3px; color: var(--ink); font: 700 10px monospace; text-overflow: ellipsis; white-space: nowrap; }
+    .slot-result { min-height: 13px; margin-top: 7px; color: #587066; font-size: 8px; }
+    .side-panel { display: flex; flex-direction: column; }
+    .side-panel .panel-body { flex: 1; }
+    .tabs { display: flex; gap: 4px; padding: 0 0 10px; border-bottom: 1px solid #e6ece6; }
+    .tab { padding: 6px 8px; color: #77857d; background: transparent; border: 0; border-bottom: 2px solid transparent; font-size: 9px; font-weight: 700; }
+    .tab.active { color: var(--forest); border-bottom-color: var(--forest); }
+    .tab-content { padding: 11px 1px 0; }
+    .tab-content h3 { margin: 0 0 6px; font: 600 14px Georgia, serif; }
+    .tab-content p { margin: 0 0 9px; color: var(--muted); font-size: 10px; line-height: 1.55; }
+    .formula { margin: 8px 0; padding: 10px; color: #e8f3ec; background: #19352b; border-radius: 4px; font: 11px/1.7 monospace; }
+    .formula .accent { color: #a7dbbe; }
+    .fact-list { display: grid; gap: 6px; margin: 9px 0 0; padding: 0; list-style: none; }
+    .fact-list li { display: grid; grid-template-columns: 83px 1fr; gap: 7px; padding-bottom: 6px; border-bottom: 1px solid #edf1ec; font-size: 9px; line-height: 1.45; }
+    .fact-list b { color: #315449; font: 700 9px monospace; }
+    .callout { margin-top: 11px; padding: 9px 10px; color: #6f500e; background: #fff5d9; border-left: 3px solid #d7a333; font-size: 9px; line-height: 1.55; }
+    .callout.coral { color: #824231; background: #fff0ea; border-left-color: var(--coral); }
+    .lower-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(290px, .75fr); gap: 14px; margin-top: 14px; }
+    .trace-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; max-height: 257px; overflow: auto; padding: 2px; }
+    .trace-item { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 7px; align-items: center; min-width: 0; padding: 7px 8px; color: #76837c; background: #fafbf9; border: 1px solid #edf0ed; border-radius: 4px; text-align: left; }
+    .trace-item:hover { border-color: #bdcec2; }
+    .trace-item.done { color: #31594a; background: #f0f8f2; border-color: #cfe5d5; }
+    .trace-item.current { color: #fff; background: #1c664f; border-color: #1c664f; }
+    .step-index { font-size: 8px; opacity: .75; }
+    .trace-title { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .trace-tag { font-size: 7px; opacity: .72; }
+    .state-map { display: grid; gap: 8px; }
+    .state-row { display: grid; grid-template-columns: 99px minmax(0, 1fr); gap: 9px; align-items: start; padding: 7px 0; border-bottom: 1px solid #edf0ed; }
+    .state-row b { color: #496357; font: 700 9px monospace; }
+    .state-row span { color: var(--muted); font-size: 9px; line-height: 1.45; }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px 13px; margin-top: 11px; color: var(--muted); font-size: 8px; }
+    .legend i { display: inline-block; width: 7px; height: 7px; margin-right: 4px; border-radius: 50%; background: #3b8b69; }
+    .legend .blue { background: #3a84aa; }
+    .legend .amber { background: #d09a26; }
+    .legend .gray { background: #a5aca6; }
+    .footer-note { margin: 15px 2px 0; color: #748178; font-size: 9px; line-height: 1.6; }
+    .footer-note strong { color: #42574d; }
+    @media (max-width: 1050px) {
+      .top-grid { grid-template-columns: minmax(0, 1.35fr) minmax(270px, .8fr); }
+      .slot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .intro { grid-template-columns: 1fr; gap: 12px; }
+    }
+    @media (max-width: 760px) {
+      .shell { width: min(100% - 22px, 620px); }
+      .mast-inner { align-items: flex-start; flex-wrap: wrap; gap: 10px; }
+      .brand { padding-right: 10px; }
+      .head-links { width: 100%; padding-left: 40px; }
+      .top-grid, .lower-grid { grid-template-columns: 1fr; }
+      .flowline { grid-template-columns: repeat(3, 1fr); row-gap: 11px; }
+      .flow-node:nth-child(3)::after { display: none; }
+      .live-summary { grid-template-columns: repeat(3, 1fr); }
+      .current-task { grid-template-columns: 1fr; }
+      .current-copy { min-height: 105px; }
+      .slot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .trace-list { grid-template-columns: 1fr; }
+      .button-row { margin-left: 0; }
+    }
+    @media (max-width: 430px) {
+      .slot-grid { grid-template-columns: 1fr; }
+      .route { align-items: stretch; flex-direction: column; }
+      .route-arrow { align-self: center; transform: rotate(90deg); }
+      .controls { align-items: end; }
+      .flow-node span { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="masthead">
+    <div class="shell mast-inner">
+      <div class="brand"><div class="brand-mark">H</div><div class="brand-name">HOMEWORLD · SOURCE LAB</div></div>
+      <div class="heading">
+        <h1>taskExecuteAllPending</h1>
+        <p>调度循环实验台 · 从 ticks 入口，一步步跟到任务让出与现场保存</p>
+      </div>
+      <nav class="head-links" aria-label="源码">
+        <a href="../../src/Game/task.c">task.c</a>
+        <a href="../../src/Game/task.h">task.h</a>
+        <a href="../../src/Win32/utility.c">utyTasksDispatch</a>
+      </nav>
+    </div>
+  </header>
+  <main class="shell">
+    <section class="intro" aria-label="调用路径">
+      <div>
+        <h2>先抓住这条主线</h2>
+        <p>每次调度先确定本轮 tick 数，再按槽位顺序过滤任务、计算应运行次数；到期后恢复保存的现场，任务主动 yield 回到调度器。</p>
+      </div>
+      <div class="route" aria-label="从计时器到任务恢复">
+        <div class="route-node"><b>utyTasksDispatch</b><span>测量经过的 ticks</span></div><i class="route-arrow">›</i>
+        <div class="route-node"><b>taskExecuteAllPending</b><span>全局准备与槽位循环</span></div><i class="route-arrow">›</i>
+        <div class="route-node"><b>taskContinued</b><span>yield 保存现场</span></div>
+      </div>
+    </section>
+
+    <div class="top-grid">
+      <section class="panel" aria-labelledby="lab-title">
+        <div class="panel-head">
+          <div><div class="eyebrow">Interactive walkthrough</div><h2 id="lab-title">本轮调度 · 逐步执行</h2></div>
+          <span class="mono" id="progressLabel" style="color:var(--muted);font-size:9px">准备中</span>
+        </div>
+        <div class="panel-body">
+          <div class="controls">
+            <div class="field small"><label for="ticksInput">传入 ticks</label><input id="ticksInput" type="number" min="0" max="999" value="20"></div>
+            <div class="field small"><label for="frequencyInput">taskFrequency</label><input id="frequencyInput" type="number" min="1" max="10000" value="240"></div>
+            <label class="toggle"><input id="demoPlayback" type="checkbox"> 回放覆盖 ticks</label>
+            <div class="field small"><label for="demoTicksInput">回放 ticks</label><input id="demoTicksInput" type="number" min="0" max="999" value="6" disabled></div>
+            <div class="field medium"><label for="exitSelect">测试退出分支</label><select id="exitSelect"><option value="-1">不退出（正常 yield）</option><option value="0">slot 0 · 首次恢复时退出</option><option value="3">slot 3 · 首次恢复时退出</option><option value="5">slot 5 · 首次恢复时退出</option></select></div>
+            <div class="button-row">
+              <button class="btn" id="resetBtn" title="按当前参数重建本轮">重置</button>
+              <button class="btn icon" id="backBtn" title="后退一步">‹</button>
+              <button class="btn primary" id="nextBtn" title="前进一步">下一步 ›</button>
+              <button class="btn" id="playBtn" title="自动播放">▶ 自动</button>
+            </div>
+          </div>
+
+          <div class="flowline" id="flowline" aria-label="调度流程阶段"></div>
+          <div class="live-summary" id="liveSummary"></div>
+          <div class="current-task" aria-live="polite">
+            <div class="current-copy">
+              <div class="current-label" id="currentLabel">STEP 00 · READY</div>
+              <h3 id="currentTitle">从入口开始</h3>
+              <p id="currentDescription">点击“下一步”，沿着真实源码顺序推进。每一步只改变当前阶段对应的调度状态。</p>
+            </div>
+            <div class="snippet-wrap">
+              <div class="snippet-head"><span id="snippetCaption">源码锚点</span><a class="source-ref" id="snippetLink" href="../../src/Game/task.c">打开 task.c ↗</a></div>
+              <pre id="codeSnippet">sdword taskExecuteAllPending(sdword ticks)
+{
+    // 本页从这个入口开始走读
+}</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel side-panel">
+        <div class="panel-head"><div><div class="eyebrow">Selected lens</div><h2>观察重点</h2></div><span class="mono" style="color:var(--muted);font-size:9px">读懂字段，再看汇编</span></div>
+        <div class="panel-body">
+          <div class="tabs" role="tablist" aria-label="观察角度">
+            <button class="tab active" data-tab="schedule" role="tab">调度字段</button>
+            <button class="tab" data-tab="formula" role="tab">次数公式</button>
+            <button class="tab" data-tab="switch" role="tab">切换 / 退出</button>
+          </div>
+          <div class="tab-content" id="tabContent"></div>
+          <div class="callout">源码把 <code>tTicks</code> / <code>tLocalTicks</code> 放在函数外声明为 <code>static</code>：这个函数要切换栈现场，不能依赖普通栈局部变量。</div>
+        </div>
+      </aside>
+    </div>
+
+    <section class="panel slot-panel">
+      <div class="panel-head">
+        <div><div class="eyebrow">taskData[0 .. taskMaxTask)</div><h2>槽位扫描 · 点击一张卡片聚焦</h2></div>
+        <p>示例槽位数 6 / 上限 <code>TSK_NumberTasks = 32</code></p>
+      </div>
+      <div class="panel-body"><div class="slot-grid" id="slotGrid"></div></div>
+    </section>
+
+    <div class="lower-grid">
+      <section class="panel">
+        <div class="panel-head"><div><div class="eyebrow">Trace navigator</div><h2>事件索引 · 点击可跳到该步</h2></div><span class="mono" id="traceCount" style="color:var(--muted);font-size:9px"></span></div>
+        <div class="panel-body"><div class="trace-list" id="traceList"></div></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><div><div class="eyebrow">State map</div><h2>这几个全局量跟着谁变化</h2></div></div>
+        <div class="panel-body">
+          <div class="state-map">
+            <div class="state-row"><b>taskCurrentTask</b><span id="stateCurrent">循环游标；当前尚未进入任何槽位。</span></div>
+            <div class="state-row"><b>taskNumberCalls</b><span id="stateCalls">当前槽位计划执行次数。循环体每次返回后递减。</span></div>
+            <div class="state-row"><b>taskTimeDelta</b><span id="stateDelta">有效 ticks ÷ taskFrequency；demo playback 可替换传入 ticks。</span></div>
+            <div class="state-row"><b>taskProcessIndex</b><span id="stateProcess">每个非空且未暂停的槽位计数一次，即使本轮调用数为 0。</span></div>
+          </div>
+          <div class="legend"><span><i></i>定时任务 / 正常恢复</span><span><i class="blue"></i>每次调度一次</span><span><i class="amber"></i>跳过</span><span><i class="gray"></i>空槽</span></div>
+        </div>
+      </section>
+    </div>
+    <p class="footer-note"><strong>源码定位：</strong><a href="../../src/Game/task.c">task.c</a> 第 380–650 行；槽位标志与 taskdata 字段见 <a href="../../src/Game/task.h">task.h</a>。这个页面把 x86 汇编切换抽象为“恢复现场 → 跳到 EIP → yield 保存现场”，不会伪造寄存器的实际数值。<br><strong>模型边界：</strong>案例是教学数据；真实项目中的 flags、nBytesStack、Titan 条件和任务函数由运行时创建。本页默认展示 TASK_MAX_TICKS=1 且上限为 8 的配置。</p>
+  </main>
+
+  <script>
+    "use strict";
+    const phases = [
+      { key: "entry", title: "入口检查", sub: "module guard" },
+      { key: "ticks", title: "ticks / 时间", sub: "demo 与 delta" },
+      { key: "scan", title: "遍历槽位", sub: "taskData[]" },
+      { key: "schedule", title: "计算调用数", sub: "frame / timer" },
+      { key: "switch", title: "恢复 / yield", sub: "x86 context" },
+      { key: "cleanup", title: "收尾返回", sub: "恢复宿主栈" }
+    ];
+    const initialTasks = [
+      { id: 0, name: "world.update", kind: "timer", ticksPerCall: 4, ticks: 2, paused: false, stack: 32, eip: "yield 后续地址 A₀" },
+      null,
+      { id: 2, name: "network.ping", kind: "timer", ticksPerCall: 6, ticks: 3, paused: true, stack: 16, eip: "yield 后续地址 A₂" },
+      { id: 3, name: "render.frame", kind: "frame", ticksPerCall: 6, ticks: 0, paused: false, stack: 48, eip: "yield 后续地址 A₃" },
+      { id: 4, name: "audio.poll", kind: "timer", ticksPerCall: 30, ticks: 4, paused: false, stack: 0, eip: "yield 后续地址 A₄" },
+      { id: 5, name: "ai.catchup", kind: "timer", ticksPerCall: 2, ticks: 1, paused: false, stack: 24, eip: "yield 后续地址 A₅" }
+    ];
+    let trace = [];
+    let cursor = 0;
+    let selectedSlot = 0;
+    let activeTab = "schedule";
+    let player = null;
+
+    const $ = function(id) { return document.getElementById(id); };
+    const escapeHtml = function(value) {
+      return String(value).replace(/[&<>"']/g, function(ch) { return ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#39;" })[ch]; });
+    };
+    const readConfig = function() {
+      return {
+        inputTicks: Math.max(0, Number($("ticksInput").value) || 0),
+        frequency: Math.max(1, Number($("frequencyInput").value) || 1),
+        playback: $("demoPlayback").checked,
+        replayTicks: Math.max(0, Number($("demoTicksInput").value) || 0),
+        exitSlot: Number($("exitSelect").value)
+      };
+    };
+    const baseState = function(config) {
+      return {
+        slots: initialTasks.map(function(t) { return t ? Object.assign({}, t, { status: "pending", calls: null, rawCalls: null, beforeTicks: t.ticks, note: "尚未扫描" }) : null; }),
+        moduleInit: true, effectiveTicks: null, timeDelta: null, timeElapsed: 12,
+        currentTask: -1, taskNumberCalls: null, processIndex: 40, continueTarget: "旧值",
+        returnTarget: "旧值", exitTarget: "旧值", outerStack: "未备份", hostContext: "宿主正在运行",
+        activeCall: null, finished: false, stoppedEarly: false, config: config
+      };
+    };
+    const makeEvent = function(phase, slot, title, description, code, line, tag, apply) {
+      trace.push({ phase: phase, slot: slot, title: title, description: description, code: code, line: line, tag: tag, apply: apply });
+    };
+
+    function buildTrace() {
+      const config = readConfig();
+      trace = [];
+      makeEvent("entry", null, "检查 task 模块是否初始化", "模块未初始化时直接返回 OKAY；代码特意不调用 taskInitCheck，因为退出阶段也可能进到这里。此分支不会扫描任何槽位。", "if (taskModuleInit == FALSE)\n    return(OKAY);", 407, "GUARD", function(s) { s.moduleInit = true; });
+      makeEvent("ticks", null, config.playback ? "demo 回放替换 ticks" : "确认本轮 ticks", config.playback ? "播放 demo 时，demNumberTicksLoad(ticks) 的结果覆盖传入值；本轮后续计算使用回放值。" : "当前没有 demo playback 覆盖，传入 ticks 原样用于时间换算和定时任务累计。demo recording 会先把 ticks 写入录制流。", config.playback ? "ticks = demNumberTicksLoad(ticks);" : "if (demDemoRecording) demNumberTicksSave(ticks);\nelse if (demDemoPlaying) ticks = demNumberTicksLoad(ticks);", 414, "TICKS", function(s) { s.effectiveTicks = config.playback ? config.replayTicks : config.inputTicks; });
+      makeEvent("ticks", null, "更新本轮时间并保存 ticks", "先计算 taskTimeDelta 并累计 taskTimeElapsed，再把有效 ticks 写入静态 tTicks，供后面的槽位循环使用。", "taskTimeDelta = ticks / taskFrequency;\ntaskTimeElapsed += taskTimeDelta;\ntTicks = ticks;", 423, "TIME", function(s) { s.timeDelta = s.effectiveTicks / config.frequency; s.timeElapsed += s.timeDelta; });
+      makeEvent("entry", null, "设置 yield 与 exit 的回跳目标", "运行期 yield 回到本函数里的 taskContinued；taskExit 使用 taskReturned 清理分支。两个标签都在本函数内部。", "taskFunctionContinue = OFFSET taskContinued;\ntaskFunctionReturn = OFFSET taskReturned;\ntaskFunctionExit = OFFSET taskReturned;", 429, "TRAMPOLINE", function(s) { s.continueTarget = "taskExecuteAllPending::taskContinued"; s.returnTarget = "taskReturned"; s.exitTarget = "taskReturned"; });
+      makeEvent("entry", null, "备份调度器栈上可能被覆盖的区域", "TASK_STACK_SAVE 编译开关启用时，先把 taskLargestLocals 字节复制到 localStack；所有任务处理完后会恢复这份宿主栈备份。它和每个 taskdata 自己的栈副本是两层保护。", "biggestStackSize = taskLargestLocals;\nmemcpy(localStack, currentESP, biggestStackSize);", 438, "OUTER STACK", function(s) { s.outerStack = "已备份 64 B 教学示意"; });
+
+      initialTasks.forEach(function(def, slotIndex) {
+        makeEvent("scan", slotIndex, "for 循环进入 slot " + slotIndex, "for 初始化 / 递增会把 taskCurrentTask 依次设为槽位索引；上界 taskMaxTask 是槽位数组当前使用范围。", "for (taskCurrentTask = 0;\n     taskCurrentTask < taskMaxTask;\n     taskCurrentTask++)", 450, "LOOP", function(s) { s.currentTask = slotIndex; s.activeCall = null; });
+        if (def === null) {
+          makeEvent("scan", slotIndex, "空槽：直接跳到下一个索引", "taskData[" + slotIndex + "] 为 NULL，因此不看 flags、不累计 ticks，也不保存或恢复现场。", "if (taskData[taskCurrentTask] != NULL)\n    /* body skipped */", 452, "EMPTY", function(s) { s.slots[slotIndex] = null; });
+          return;
+        }
+        if (def.paused) {
+          makeEvent("scan", slotIndex, "暂停任务：continue 跳过", "TF_Paused 置位时直接进入下一轮 for。它不会增加本轮 ticks，原有余数保持为 " + def.ticks + "。", "if (bitTest(flags, TF_Paused))\n    continue;", 454, "PAUSED", function(s) { s.slots[slotIndex].status = "paused"; s.slots[slotIndex].note = "跳过；余数不变"; });
+          return;
+        }
+        if (def.kind === "frame") {
+          makeEvent("schedule", slotIndex, "TF_OncePerFrame：本次调度固定安排 1 次", "逐帧任务不按传入 ticks 或 ticksPerCall 决定是否到期。当前源码把旧的 ticks==0 门控注释掉了：每次调度器调用都运行一次。", "taskNumberCalls = 1;\ntaskData[taskCurrentTask]->ticks = ticksPerCall;\ntaskData[taskCurrentTask]->ticks--;", 461, "ONCE / CALL", function(s) { const t = s.slots[slotIndex]; t.calls = 1; t.rawCalls = 1; t.ticks = t.ticksPerCall - 1; t.status = "scheduled"; t.note = "每轮 1 次；ticks 重设后减 1"; s.taskNumberCalls = 1; });
+        } else {
+          const localTicks = config.playback ? config.replayTicks : config.inputTicks;
+          const totalTicks = localTicks + def.ticks;
+          const rawCalls = Math.floor(totalTicks / def.ticksPerCall);
+          const calls = Math.min(rawCalls, 8);
+          const remainder = totalTicks % def.ticksPerCall;
+          const capped = rawCalls > calls;
+          const formulaText = "tLocalTicks = " + localTicks + " + " + def.ticks + " = " + totalTicks + "\n余数 = " + totalTicks + " % " + def.ticksPerCall + " = " + remainder + "\n调用数 = min(" + rawCalls + ", 8) = " + calls;
+          const detail = "定时任务把本轮有效 ticks 与上轮余数相加。" + (capped ? "原始可运行 " + rawCalls + " 次，但 TSK_MaxTicks=8 截为 8；余数仍按完整总 ticks 的模数保存，因此超出的整周期不会留到下一轮。" : "整除结果是本轮调用数，模运算结果作为下一轮余数。");
+          makeEvent("schedule", slotIndex, "定时任务：计算调用数与新余数", detail, "tLocalTicks = tTicks + taskData[taskCurrentTask]->ticks;\ntaskData[taskCurrentTask]->ticks = tLocalTicks % ticksPerCall;\ntaskNumberCalls = tLocalTicks / ticksPerCall;\ntaskNumberCalls = min(taskNumberCalls, 8);", 478, "TIMER MATH", function(s) { const t = s.slots[slotIndex]; t.calls = calls; t.rawCalls = rawCalls; t.ticks = remainder; t.status = "scheduled"; t.note = formulaText.replace(/\n/g, " · "); if (capped) t.note += " · 上限截断"; s.taskNumberCalls = calls; });
+        }
+        makeEvent("switch", slotIndex, "保存调度器自己的寄存器现场", "每个非空、未暂停任务都会经过这里，即使 taskNumberCalls 为 0。taskProcessIndex 也是每个这样的槽位加一次，不是每次 task 函数调用加一次。", "save ESI / EDI / ESP / EBP / EBX;\ntaskProcessIndex++;", 493, "HOST SAVE", function(s) { s.hostContext = "已保存，准备切换到 slot " + slotIndex; s.processIndex++; });
+        if (def.stack > 0) {
+          makeEvent("switch", slotIndex, "把 taskdata 栈副本恢复到共享栈", "TASK_STACK_SAVE 启用且该任务 nBytesStack > 0 时，把 taskdata 后面的字节复制回该任务保存的 ESP 位置。这样后续恢复的局部变量和调用帧可继续使用。", "dest = (udword *)taskData[taskCurrentTask]->esp;\nsrc = (udword *)(taskData[taskCurrentTask] + 1);\ncopy nBytesStack bytes;", 508, "TASK STACK IN", function(s) { s.slots[slotIndex].stackState = "已从 taskdata 恢复到共享栈"; });
+        }
+        const scheduledCalls = (def.id === config.exitSlot && (def.kind === "frame" ? 1 : Math.min(Math.floor(((config.playback ? config.replayTicks : config.inputTicks) + def.ticks) / def.ticksPerCall), 8)) > 0) ? 1 : (def.kind === "frame" ? 1 : Math.min(Math.floor(((config.playback ? config.replayTicks : config.inputTicks) + def.ticks) / def.ticksPerCall), 8));
+        if (def.id === config.exitSlot && scheduledCalls > 0) {
+          const total = def.kind === "frame" ? 1 : Math.floor(((config.playback ? config.replayTicks : config.inputTicks) + def.ticks) / def.ticksPerCall);
+          makeEvent("switch", slotIndex, "恢复 slot " + slotIndex + "，任务走 taskExit()", "任务函数不会回到这里调用普通 return；taskExit 间接跳到 taskReturned。此分支会跳过正常 yield 保存和 for 循环尾部的 taskNumberCalls--。", "restore task context; jmp saved eip;\n/* task body calls taskExit() */\n/* taskFunctionExit -> taskReturned */", 531, "EXIT BRANCH", function(s) { s.activeCall = "exit"; s.slots[slotIndex].status = "running"; });
+          makeEvent("switch", slotIndex, "taskReturned：恢复宿主现场并释放任务", "taskReturned 先移除 call 压入的地址、恢复调度器寄存器，再调用 taskStop(taskCurrentTask)。槽位变 NULL；若它是最高槽位，taskMaxTask 会缩小。跳转绕过 for 尾部递减，所以 taskNumberCalls 保留进入这次恢复前的值。", "taskReturned:\n    restore host registers;\ntaskStop(taskCurrentTask);", 624, "STOP", function(s) { s.slots[slotIndex].status = "stopped"; s.slots[slotIndex].note = "taskStop 已释放 taskdata"; s.hostContext = "宿主 / 调度器继续运行"; s.activeCall = null; });
+        } else {
+          for (let callIndex = 1; callIndex <= scheduledCalls; callIndex++) {
+            const ordinal = callIndex;
+            makeEvent("switch", slotIndex, "第 " + ordinal + " / " + scheduledCalls + " 次：恢复任务现场并跳到 EIP", "调度器把 taskdata 保存的寄存器、ESP、EBP 装回 CPU，再 jmp 到上次 yield 保存的 EIP。恢复的是同一条主线程上的执行现场，不是切换到另一个线程。", "restore EBX / ECX / EDI / ESI / ESP / EBP;\njmp saved EIP;", 531, "RESTORE", function(s) { s.activeCall = ordinal + " / " + scheduledCalls; s.hostContext = "CPU 正运行 slot " + slotIndex; s.slots[slotIndex].status = "running"; });
+            makeEvent("switch", slotIndex, "任务运行到 taskYield()，跳回 taskContinued", "任务完成一段协作工作后主动 yield。call 压入的续接地址由 trampoline pop 出来，写入 taskdata.eip；寄存器与 ESP / EBP 也保存起来，等待下次恢复。", "taskYield() -> taskFunctionContinue;\ntaskContinued:\n    pop eax; save eax as eip;\n    save registers / esp / ebp;", 556, "YIELD", function(s) { s.activeCall = null; s.hostContext = "已回到调度器"; s.slots[slotIndex].eip = "新的 yield 续接地址 A" + slotIndex; s.slots[slotIndex].status = "yielded"; });
+            makeEvent("switch", slotIndex, "本次恢复完成：taskNumberCalls--", "yield 回到 for 循环后，循环尾表达式才递减次数。若次数仍大于 0，马上再次恢复同一任务；直到本轮次数耗尽才离开内层循环。", "for (; taskNumberCalls > 0; taskNumberCalls--)\n    restore -> run -> yield;", 524, "CALL - 1", function(s) { if (s.taskNumberCalls !== null && s.taskNumberCalls > 0) s.taskNumberCalls--; s.activeCall = null; });
+          }
+          makeEvent("switch", slotIndex, "恢复调度器现场", "所有计划调用 yield 回来后，恢复 taskExecuteAllPending 自己的 ESI / EDI / ESP / EBP / EBX，执行流回到遍历循环。调用数为 0 时也会走过保存与恢复调度器现场这段，只是不会跳入任务。", "restore saved ESI / EDI / ESP / EBP / EBX;", 594, "HOST RESTORE", function(s) { s.hostContext = "宿主 / 调度器继续运行"; s.activeCall = null; });
+          if (def.stack > 0) {
+            makeEvent("switch", slotIndex, "把共享栈上的任务字节保存回 taskdata", "任务 yield 后的 ESP 与栈内容写回 taskdata 后续存储区，供下一轮先恢复栈、再恢复寄存器。每个任务都有自己的 nBytesStack。", "src = (udword *)taskData[taskCurrentTask]->esp;\ndest = (udword *)(taskData[taskCurrentTask] + 1);\ncopy nBytesStack bytes;", 608, "TASK STACK OUT", function(s) { s.slots[slotIndex].stackState = "yield 后已保存回 taskdata"; });
+          }
+        }
+      });
+      makeEvent("cleanup", null, "遍历结束：清空 taskCurrentTask", "for 循环自然结束时游标先到 taskMaxTask；函数随后显式设为 -1，表示当前没有正在运行的任务。", "taskCurrentTask = -1;", 642, "NO CURRENT TASK", function(s) { s.currentTask = -1; });
+      makeEvent("cleanup", null, "恢复调度器栈备份并返回", "若本轮开始时备份了最大局部栈区域，这里恢复到原位置。完成后 taskExecuteAllPending 返回 OKAY。", "memcpy(currentESP, localStack, biggestStackSize);\nreturn(OKAY);", 643, "RETURN", function(s) { s.outerStack = "宿主栈已恢复"; s.finished = true; });
+      cursor = 0;
+      render();
+    }
+
+    function stateAt(position) {
+      const s = baseState(readConfig());
+      for (let i = 0; i < position; i++) if (trace[i] && trace[i].apply) trace[i].apply(s);
+      return s;
+    }
+    function activePhase(position) {
+      if (position >= trace.length) return "cleanup";
+      return trace[position].phase;
+    }
+    function slotStatusText(task, state) {
+      if (!task) return "NULL · continue";
+      const live = state.slots[task.id];
+      if (live.status === "pending") return "等待扫描 · 预演 " + expectedSummary(task);
+      if (live.status === "paused") return "跳过：暂停位为 1；ticks 保持 " + task.ticks;
+      if (live.status === "scheduled") return "本轮安排 " + live.calls + " 次" + (live.rawCalls > live.calls ? "（上限截断）" : "");
+      if (live.status === "running") return "CPU 在任务体内：第 " + (state.activeCall || "?") + " 次";
+      if (live.status === "yielded") return "yield 已保存 EIP；calls left " + state.taskNumberCalls;
+      if (live.status === "stopped") return "taskExit → taskStop；槽位释放";
+      return live.note || "已处理";
+    }
+    function expectedSummary(t) {
+      if (t.kind === "frame") return "1 次 / ticks → " + (t.ticksPerCall - 1);
+      const cfg = readConfig();
+      const ticks = cfg.playback ? cfg.replayTicks : cfg.inputTicks;
+      const total = ticks + t.ticks;
+      return Math.min(Math.floor(total / t.ticksPerCall), 8) + " 次 / 余数 " + (total % t.ticksPerCall);
+    }
+    function renderSlots(state) {
+      const grid = $("slotGrid");
+      grid.innerHTML = "";
+      initialTasks.forEach(function(t, index) {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "slot-card" + (selectedSlot === index ? " selected" : "") + (state.currentTask === index ? " current" : "") + (t && state.slots[index].status === "paused" ? " skipped" : "") + (t && state.slots[index].status === "stopped" ? " stopped" : "");
+        if (!t) {
+          card.innerHTML = '<div class="slot-top"><span class="slot-id">slot ' + index + ' · taskData[' + index + ']</span><span class="badge empty">NULL / 空槽</span></div><div class="slot-name">未分配任务</div><div class="slot-data"><div><span>flags</span><b>—</b></div><div><span>ticks</span><b>—</b></div><div><span>现场</span><b>不访问</b></div></div><div class="slot-result">' + escapeHtml(slotStatusText(null, state)) + '</div>';
+        } else {
+          const live = state.slots[index];
+          const typeLabel = t.paused && live.status === "pending" ? "暂停" : (t.kind === "frame" ? "逐次调度" : "定时");
+          const typeClass = t.paused && live.status === "pending" ? "paused" : (t.kind === "frame" ? "frame" : "");
+          const ticksValue = live.status === "pending" ? t.ticks : live.ticks;
+          card.innerHTML = '<div class="slot-top"><span class="slot-id">slot ' + index + ' · handle ' + index + '</span><span class="badge ' + typeClass + '">' + typeLabel + '</span></div>' +
+            '<div class="slot-name">' + escapeHtml(t.name) + '</div>' +
+            '<div class="slot-data"><div><span>ticksPerCall</span><b>' + t.ticksPerCall + '</b></div><div><span>余数 ticks</span><b>' + ticksValue + '</b></div><div><span>nBytesStack</span><b>' + t.stack + ' B</b></div></div>' +
+            '<div class="slot-result">' + escapeHtml(slotStatusText(t, state)) + '</div>';
+        }
+        card.addEventListener("click", function() { selectedSlot = index; render(); });
+        grid.appendChild(card);
+      });
+    }
+    function eventCodeUrl(event) { return "../../src/Game/task.c#L" + (event ? event.line : 380); }
+    function renderFlow(state) {
+      const now = activePhase(cursor);
+      $("flowline").innerHTML = phases.map(function(phase, index) {
+        let done = false;
+        if (cursor >= trace.length) done = true;
+        else {
+          const currentIndex = phases.findIndex(function(p) { return p.key === now; });
+          done = index < currentIndex;
+        }
+        return '<div class="flow-node ' + (phase.key === now ? "active" : "") + (done ? " done" : "") + '"><div class="flow-dot">' + (done ? "✓" : (index + 1)) + '</div><strong>' + phase.title + '</strong><span>' + phase.sub + '</span></div>';
+      }).join("");
+    }
+    function renderSummary(state) {
+      const current = state.currentTask < 0 ? "—" : String(state.currentTask);
+      const count = state.taskNumberCalls === null ? "—" : String(state.taskNumberCalls);
+      const effective = state.effectiveTicks === null ? "—" : String(state.effectiveTicks);
+      const elapsed = state.timeElapsed === null ? "—" : state.timeElapsed.toFixed(3) + " s";
+      const host = state.hostContext.indexOf("CPU 正运行") === 0 ? "任务 CPU" : "调度器";
+      const metrics = [["有效 ticks", effective], ["taskTimeDelta", state.timeDelta === null ? "—" : state.timeDelta.toFixed(4) + " s"], ["taskCurrentTask", current], ["taskNumberCalls", count], ["当前执行者", host]];
+      $("liveSummary").innerHTML = metrics.map(function(item) { return '<div class="metric"><span class="metric-label">' + item[0] + '</span><b class="metric-value">' + item[1] + '</b></div>'; }).join("");
+      $("progressLabel").textContent = (cursor >= trace.length ? "完成" : "事件 " + cursor + " / " + trace.length) + " · 累计 " + elapsed;
+      $("stateCurrent").textContent = state.currentTask < 0 ? (state.finished ? "-1：本轮已完成或当前没有任务在运行。" : "-1：当前没有正在运行的任务；进入循环后会依次变成 0、1、2…") : state.currentTask + "：正在扫描此槽位；空槽或暂停分支 continue 后仍会递增。";
+      $("stateCalls").textContent = state.taskNumberCalls === null ? "尚未计算；逐帧任务固定设为 1，定时任务用 ticksPerCall 整除。" : state.taskNumberCalls + "：当前全局循环剩余次数；每次正常 yield 返回后递减。";
+      $("stateDelta").textContent = state.timeDelta === null ? "尚未换算；ticks 可能先被 demo playback 替换。" : effective + " / " + readConfig().frequency + " = " + state.timeDelta.toFixed(4) + " 秒；累计 elapsed=" + elapsed + "。";
+      $("stateProcess").textContent = "" + state.processIndex + "：非空且未暂停的任务槽位每轮 +1；不会按 taskNumberCalls 的次数累加。";
+    }
+    function renderCurrent(state) {
+      const e = trace[cursor];
+      if (!e) {
+        $("currentLabel").textContent = "COMPLETE · RETURN";
+        $("currentTitle").textContent = "本轮扫描完成";
+        $("currentDescription").textContent = "taskCurrentTask 已清为 -1，宿主栈区域已恢复，函数返回 OKAY。重置后可以改 ticks 或选择退出分支再走一遍。";
+        $("snippetCaption").textContent = "task.c · taskExecuteAllPending";
+        $("snippetLink").href = "../../src/Game/task.c#L642";
+        $("codeSnippet").textContent = "taskCurrentTask = -1;\nmemcpy(currentESP, localStack, biggestStackSize);\nreturn(OKAY);";
+        return;
+      }
+      const slotText = e.slot === null ? "" : " · slot " + e.slot;
+      $("currentLabel").textContent = "STEP " + String(cursor + 1).padStart(2, "0") + " / " + String(trace.length).padStart(2, "0") + " · " + e.tag + slotText;
+      $("currentTitle").textContent = e.title;
+      $("currentDescription").textContent = e.description;
+      $("snippetCaption").textContent = "task.c · L" + e.line + " · " + e.tag;
+      $("snippetLink").href = eventCodeUrl(e);
+      $("codeSnippet").textContent = e.code;
+    }
+    function renderTrace() {
+      const list = $("traceList");
+      const start = Math.max(0, Math.min(cursor - 2, trace.length - 9));
+      const end = Math.min(trace.length, Math.max(12, start + 20));
+      const visible = trace.slice(start, end);
+      list.innerHTML = visible.map(function(e, localIndex) {
+        const index = start + localIndex;
+        const cls = index < cursor ? "done" : (index === cursor ? "current" : "");
+        const slot = e.slot === null ? "" : " · " + e.slot;
+        return '<button class="trace-item ' + cls + '" data-index="' + index + '"><span class="step-index">' + String(index + 1).padStart(2, "0") + '</span><span class="trace-title">' + escapeHtml(e.title) + '</span><span class="trace-tag">' + escapeHtml(e.tag + slot) + '</span></button>';
+      }).join("");
+      list.querySelectorAll(".trace-item").forEach(function(button) { button.addEventListener("click", function() { pausePlayer(); cursor = Number(button.dataset.index); render(); }); });
+      $("traceCount").textContent = trace.length + " 个微步骤 · 当前 " + cursor;
+    }
+    function renderTab(state) {
+      const t = selectedSlot >= 0 ? initialTasks[selectedSlot] : null;
+      let html = "";
+      if (activeTab === "schedule") {
+        html = '<h3>' + (t ? "slot " + selectedSlot + " · " + escapeHtml(t.name) : "选中槽位") + '</h3>';
+        if (!t) {
+          html += '<p>空槽满足 taskData[i] == NULL，马上 continue。taskCurrentTask 仍会由 for 表达式递增。</p>';
+        } else {
+          html += '<p>' + (t.kind === "frame" ? "这个任务带 TF_OncePerFrame。" : "这个任务按 ticksPerCall 定时运行。") + (t.paused ? "它还带 TF_Paused，槽位扫描时会直接跳过。" : "它未暂停，会进入调用次数计算和调度器现场保护。") + '</p>';
+          html += '<ul class="fact-list"><li><b>flags</b><span>' + (t.paused ? "TF_Allocated | TF_Paused" : (t.kind === "frame" ? "TF_Allocated | TF_OncePerFrame" : "TF_Allocated")) + '</span></li><li><b>ticks</b><span>' + t.ticks + ' · 本轮之前留下的余数 / 帧计数</span></li><li><b>ticksPerCall</b><span>' + t.ticksPerCall + ' · 定时模式整除周期；逐帧模式只会赋值后递减</span></li><li><b>nBytesStack</b><span>' + t.stack + ' B · TASK_STACK_SAVE 下的任务栈副本字节数</span></li><li><b>saved EIP</b><span>' + escapeHtml(t.eip) + ' · 恢复时 jmp 到保存的位置</span></li></ul>';
+        }
+        html += '<div class="callout">taskdata 的布局在 <code>task.h</code>：调度字段在前，随后是 EBX / ECX / EDI / ESI / ESP / EBP / EIP 和 nBytesStack。</div>';
+      } else if (activeTab === "formula") {
+        const cfg = readConfig();
+        const effective = cfg.playback ? cfg.replayTicks : cfg.inputTicks;
+        if (t && t.kind === "timer") {
+          const total = effective + t.ticks;
+          const raw = Math.floor(total / t.ticksPerCall);
+          const remainder = total % t.ticksPerCall;
+          html = '<h3>定时任务 · ' + escapeHtml(t.name) + '</h3><p>先完整拆成整周期与余数；然后最多只执行 8 次。</p><div class="formula">tLocalTicks = <span class="accent">' + effective + '</span> + <span class="accent">' + t.ticks + '</span> = ' + total + '<br>calls = min(floor(' + total + ' / ' + t.ticksPerCall + '), 8) = <span class="accent">' + Math.min(raw, 8) + '</span><br>ticks(next) = ' + total + ' % ' + t.ticksPerCall + ' = <span class="accent">' + remainder + '</span></div>';
+          if (raw > 8) html += '<div class="callout coral">原始整除得到 ' + raw + ' 次，但上限截成 8。余数仍按原总量取模；被截掉的整周期不会留作 backlog。</div>';
+        } else if (t && t.kind === "frame") {
+          html = '<h3>TF_OncePerFrame · ' + escapeHtml(t.name) + '</h3><p>每次进入 taskExecuteAllPending 都运行一次。period 不参与本轮是否到期的判断。</p><div class="formula">taskNumberCalls = <span class="accent">1</span><br>ticks = ticksPerCall = ' + t.ticksPerCall + '<br>ticks-- → <span class="accent">' + (t.ticksPerCall - 1) + '</span></div><div class="callout">这里的 “frame” 是一次调度器调用，不等同于显示器的垂直同步帧。</div>';
+        } else {
+          html = '<h3>ticks 驱动方式</h3><p>先选择一个非暂停的定时任务，观察余数怎样跨调用累积。当前调度输入是 ' + effective + ' ticks。</p><div class="formula">总量 = 本轮 ticks + taskdata.ticks<br>次数 = 总量 / ticksPerCall<br>余数 = 总量 % ticksPerCall</div>';
+        }
+      } else {
+        html = '<h3>两条从任务体返回的路径</h3><p>任务在同一主线程运行；调度器只在任务主动 yield 或退出时重新取得控制权。</p><ul class="fact-list"><li><b>taskYield()</b><span>taskFunctionContinue → taskContinued；pop 续接地址，保存 EIP 与寄存器现场。</span></li><li><b>taskExit()</b><span>taskFunctionExit → taskReturned；恢复宿主现场并调用 taskStop 释放槽位。</span></li><li><b>调用数循环</b><span>正常 yield 返回后，for 尾部 taskNumberCalls--；退出跳转会绕开这个递减。</span></li><li><b>两层栈副本</b><span>每任务保存 nBytesStack；调度器另备份 taskLargestLocals 区域。</span></li></ul><div class="callout coral">选“测试退出分支”后重置，可让一项有待执行次数的任务在首次恢复时走 taskExit()。</div>';
+      }
+      $("tabContent").innerHTML = html;
+    }
+    function render() {
+      const state = stateAt(cursor);
+      renderFlow(state); renderSummary(state); renderCurrent(state); renderSlots(state); renderTrace(); renderTab(state);
+      $("backBtn").disabled = cursor <= 0;
+      $("nextBtn").disabled = cursor >= trace.length;
+      $("playBtn").textContent = player ? "Ⅱ 暂停" : "▶ 自动";
+    }
+    function pausePlayer() { if (player) { clearInterval(player); player = null; } }
+    function stepForward() { if (cursor < trace.length) cursor++; render(); }
+    function startPlayer() {
+      if (player) { pausePlayer(); render(); return; }
+      if (cursor >= trace.length) cursor = 0;
+      player = setInterval(function() { if (cursor >= trace.length) { pausePlayer(); render(); return; } cursor++; render(); }, 620);
+      render();
+    }
+    function reset() { pausePlayer(); buildTrace(); }
+
+    $("nextBtn").addEventListener("click", function() { pausePlayer(); stepForward(); });
+    $("backBtn").addEventListener("click", function() { pausePlayer(); cursor = Math.max(0, cursor - 1); render(); });
+    $("resetBtn").addEventListener("click", reset);
+    $("playBtn").addEventListener("click", startPlayer);
+    $("demoPlayback").addEventListener("change", function() { $("demoTicksInput").disabled = !this.checked; reset(); });
+    ["ticksInput", "frequencyInput", "demoTicksInput", "exitSelect"].forEach(function(id) {
+      $(id).addEventListener("change", reset);
+      $(id).addEventListener("keydown", function(event) { if (event.key === "Enter") reset(); });
+    });
+    document.querySelectorAll(".tab").forEach(function(button) {
+      button.addEventListener("click", function() {
+        activeTab = button.dataset.tab;
+        document.querySelectorAll(".tab").forEach(function(tab) { tab.classList.toggle("active", tab === button); });
+        render();
+      });
+    });
+    buildTrace();
+  </script>
+</body>
+</html>
