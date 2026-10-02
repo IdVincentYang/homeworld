@@ -285,6 +285,41 @@ sequenceDiagram
 4. **`AIOrders` 把战略变成 move 列表**：例如一项攻击订单可以按顺序加入 `GetShips`、编队、攻击和结束 move。每个 move 的参数保存在对应的 `AITeamMove.params` 中；这里形成的是团队命令计划，不是已经执行完的舰船动作。
 5. **`aitExecute()` 每次只推进当前 move**：它先运行 `aieExecute(team)`，因为事件处理器可以修改 `curMove`；再处理延迟；最后才调用当前 move 的 `processFunction`。返回完成后，才切到下一个 move，并按需应用新编队/战术。`MOVE_DONE` 代表这条命令序列结束。
 
+### 命令会不会完成？等待、插队与取消
+
+这里的“命令”要分两层：`AITeamMove` 是团队的**计划步骤**；`CommandLayer` 中的命令才是舰船正在执行的移动、攻击等行为。move 完成不一定代表舰船行为也结束。
+
+`AITeamMove` 有 `processing`、`wait`、`remove` 等执行状态字段，但没有通用的 `cancelled` 标记。取消主要通过改写或删除 `AITeam.moves` 队列实现。
+
+`aitExecute()` 调用 move 的 `processFunction`：返回 `FALSE` 表示当前 move 下次继续检查；返回 `TRUE` 表示团队执行器可以推进到下一条。它没有统一的超时或“保证最终完成”机制，具体条件由每种 move 自己决定。
+
+| 情况 | 代码行为 | 怎么理解 |
+| :-- | :-- | :-- |
+| 等待完成 | `MOVE_ATTACK` 在 `wait=TRUE` 时，发出攻击后继续返回 `FALSE`，直到团队不再攻击、目标消失或团队为空；`MOVE_VARWAIT` 在 `wait=TRUE` 时等变量达到指定值。 | 若条件一直不满足，move 可以一直占据 `curMove`。当前创建路径使用的 `MOVE_FANCYGETSHIPS` 也会等交付变量，不采用传入的 `wait` 参数。 |
+| 发出后继续 | `MOVE_ATTACK` 在 `wait=FALSE` 时，发出攻击命令后即可返回 `TRUE`。 | AI move 队列可以继续走下一步，但舰船的攻击仍可能在 CommandLayer 中进行。 |
+| 事件插队 | `aitExecute()` 先调 `aieExecute()`。例如燃料低事件会把新的 Dock move 插到当前 move 前面，并把它设为 `curMove`。 | 原 move 通常留在队列后面，Dock 完成后再继续；这是暂缓/插队，不是取消原 move。 |
+| 显式删除或替换 | `aitDeleteCurrentMove()` 删除当前节点；`aitDeleteMovesUntilMoveType()` 删除当前节点起、直到指定类型之前的节点；`aitDeleteAllTeamMoves()` 清空整个队列。 | 这些操作能取消或丢弃 AI 的计划步骤。`remove` 字段含义不同：它控制 move **正常完成后**是否从列表移除。 |
+
+两个源码例子能看出“取消”发生在哪一层：KAS 的 `kasfAttack()` 先清空脚本团队原有 moves，再加入新的 AdvancedAttack move；事件处理器也可以插入优先执行的 move。前者替换的是团队计划，后者可能只是暂缓原计划。
+
+```mermaid
+flowchart LR
+    E[aieExecute 检查事件] --> H{事件处理器改写队列?}
+    H -->|插入优先 move| N[先执行新 move，旧 move 留在后面]
+    H -->|不改写| P[调用当前 processFunction]
+    N --> P
+    P -->|FALSE| W[保留当前 move，下次继续检查]
+    P -->|TRUE| D{remove 为 TRUE?}
+    D -->|是| X[清理并删除 move]
+    D -->|否| A[保留 move 节点]
+    X --> NEXT[推进队列]
+    A --> NEXT
+```
+
+**注意：删除 move 不等同于立刻停止舰船。** `aitDeleteAllTeamMoves()` 清理的是 `AITeam.moves` 并调用可用的 `moveCloseFunction`；这个 close 回调通常负责释放 move 自己持有的目标/选择集等数据。以 Attack move 为例，`aimCloseAttack()` 释放目标选择集，并不直接发停止命令。舰船实际收到的新行为由后续的 `aiuWrap*()` / `clWrap*()` 命令决定。因此阅读“取消”代码时要分别追踪：团队计划是否删除，以及 CommandLayer 上已有的舰船命令是否被停止或替换。
+
+相关源码：[`aitExecute()`](../../src/Game/AITeam.c#L2112)、[`aitDeleteCurrentMove()` / `aitDeleteAllTeamMoves()`](../../src/Game/AITeam.c#L142)、[`MOVE_ATTACK`](../../src/Game/AIMoves2.c#L230)、[`MOVE_VARWAIT`](../../src/Game/AIMoves.c#L225)、[`MOVE_FANCYGETSHIPS`](../../src/Game/AIMoves2.c#L589)、[燃料低时插入 Dock move](../../src/Game/AIHandler.c#L152)、[`kasfAttack()`](../../src/Game/KASFunc.c#L290)。
+
 ### 缺舰时的交接细节
 
 - `MOVE_GETSHIPS` 的处理函数首次运行时调用 `aifTeamRequestsShipsCB()`。它把“要造什么”写入管理器的 `RequestShips` 队列，同时创建 `TeamWaitingForTheseShips`，记住接收团队、舰船类型、待交数量和完成变量。
