@@ -66,6 +66,29 @@ flowchart TD
 
 图中的次序很重要：先把已有新舰分派出去，再让管理器调整团队/产生请求；随后推进团队 move，最后处理建造请求。源码位置见 [`AIPlayer.c`](../../src/Game/AIPlayer.c#L832)、[`AIFleetMan.c`](../../src/Game/AIFleetMan.c#L1278) 和 [`univupdate.c`](../../src/Game/univupdate.c#L7650)。
 
+#### 为什么首轮与后续更新不同？
+
+这里的“首轮”是 `aifInit()` 把 `AIPlayer.firstTurn` 设为 `TRUE` 之后，第一次进入标准种族的 `aifFleetCommand()`；不是游戏的第一帧。首轮仍会执行图中的敌情准备、新舰分派，以及尾部的 `aitExecute()`、造船请求处理和临时 blob 清理。**首轮跳过的只是后续分支里的超空间资源处理和 Attack / Defense / Resource 三个常规管理器。**
+
+首轮在舰队控制开启时调用 `aiaProcessSpecialTeams()`，按 feature 设置侦察团队，并可能创建骚扰团队。源码注释说这些 special teams “take care of themselves and need little directing from the AttackMan”；而 `aitExecute()` 在同一次 `aifFleetCommand()` 尾部仍会推进已有团队。因此这一步是一次性建立特殊团队并让团队执行器接手，之后才进入常规管理器循环。
+
+源码能证明这个调用顺序和功能分工，但**没有注释说明为何要把常规管理器延到第二次 AI 更新**。把它理解成“先建立特殊团队、后续更新进入常规策略维护”的启动/稳态分段，是对代码结构的解释；不应理解成 Attack、Defense、Resource 在逻辑上首轮绝对不能运行。若关闭单人游戏的舰队控制，首轮连特殊团队也不创建，但仍会清除 `firstTurn` 并执行公共尾部。P2 的独立舰队 AI 提前返回，不经过这段首轮分支。
+
+### 图中 race ID 对照
+
+`R1` 等名称是 `ShipRace` 分类 ID，不是玩家槽位编号。代码定义了六项；官方手册和战役脚本中的阵营名称可帮助把内部缩写对应到游戏阵营：
+
+| ID | 数值 | 阵营名称 | 代码 / 资料对应依据 |
+| :-- | --: | :-- | :-- |
+| `R1` | 0 | Kushan（库申） | Mission 05 用 `RaceOfHuman() == 0` 选择 Kushan 文本；另一分支 `1` 选择 Taiidan。 |
+| `R2` | 1 | Taiidan（泰丹） | 同上；手册也将可选标准舰队列为 Kushan 与 Taiidan。 |
+| `P1` | 2 | Turanic Raiders（图拉尼掠袭者） | Mission 04 把 `P1Mothership` 标为 “Turanic Raider Mothership”，并将 Turanic 团队放入 `SHIPS_AllP1`。 |
+| `P2` | 3 | Kadeshi（卡德什） | Mission 07 标题为 “The Gardens of Kadesh”，其母舰团队常量为 `TEAM_P2Mothership`。 |
+| `P3` | 4 | T-Mat（概念阵营；未在本版战役实装） | 仓库只定义 `P3Destroyer`、`P3Frigate`、`P3Megaship`，没有任务脚本给出阵营名；开发者关于 P3 的历史引述将其称为 T-Mat。应把 T-Mat 视为 P3 的未完成设计称呼；本仓库没有实现 P3 战役或专属 AI。 |
+| `Traders` | 5 | Bentusi（本地代码称 Traders） | Mission 06 的对白称来访者为 Bentusi，团队/FSM 名称使用 Traders；代码的 Traders 舰船范围包含 FloatingCity 等贸易相关对象。 |
+
+这里的数值直接来自 [`RaceDefs.h`](../../src/Game/RaceDefs.h#L1)，`ShipDefs.h` 把 P1/P2/P3 与 Traders 的舰船类型分段定义。Kushan / Taiidan 的官方阵营名称可参见[原版 Homeworld 手册扫描件](https://www.homeworldarchives.com/media/Homeworld-Manual-HW1-ver1.pdf)；P3 与 T-Mat 的关系来自[保存 Alex Garden 与 Rob Cunningham 相关开发者引述的资料页](https://www.well-of-souls.com/homeworld/misc/megaship.htm)，但仓库本身没有写出 “T-Mat” 这个名字。战役脚本证据见 [`Mission04.kas`](../../src/SinglePlayer/Mission04.kas#L2009)、[`Mission05.kas`](../../src/SinglePlayer/Mission05.kas#L155)、[`Mission06.kas`](../../src/SinglePlayer/Mission06.kas#L320) 和 [`Mission07.kas`](../../src/SinglePlayer/Mission07.kas#L144)。
+
 ## 2. 模块说明
 
 ### AIPlayer 控制器
