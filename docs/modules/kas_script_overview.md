@@ -1,7 +1,7 @@
 # KAS 脚本系统 模块 overview
 
 > 模块：`KAS`（Mission scripting language runtime + `kas2c` 编译器）
-> 源码：`src/Game/KAS.c`、`src/Game/KAS.h`、`src/Game/KASFunc.c`、`src/Game/kasfunc.h`、`tools/win32/KAS/`
+> 源码：`src/Game/KAS.c`、`src/Game/KAS.h`、`src/Game/KASFunc.c`、`src/Game/KASFunc.h`、`tools/win32/KAS/`
 > 路径均相对仓库根目录；「事实」可由源码核验，「推断」是由代码结构推出的解释，「设计观察」总结实现收益与代价。
 
 ---
@@ -18,7 +18,7 @@
 
 - 三层对象（Mission/FSM/State）的运行期作用域与推进调度（`kasMissionStart` / `kasExecute` / `kasJump` / `kasFSMCreate`，`src/Game/KAS.c`）。
 - 脚本引用布局实体的标签解析：`TEAM`/`SHIPS`/`TEAMSHIPS`/`PATH`/`POINT`/`VOLUME`/`*POINT` 等标签 → 运行时指针（`kasAITeamPtr`/`kasPathPtr`/`kasVectorPtr`/`kasVolumePtr`/`kasGrowSelectionPtr` 等，`src/Game/KAS.c`）。
-- 脚本可调用的宿主函数集（`kasf*`，约 250 个，`src/Game/KASFunc.c`），下发攻击/移动/停靠/采集/超空间/目标/字幕等高层命令。
+- 脚本可调用的宿主函数集（当前 `tools/win32/KAS/KAS2C.c` 的 `functions[]` 注册表有 301 个启用 API），包括攻击/移动/停靠/采集/超空间/目标/字幕、教程 UI 和世界状态操作；实现主要在 `src/Game/KASFunc.c`。
 - 变量/定时器的「作用域名」解析（`kasfScopeName`，`src/Game/KASFunc.c:133`）。
 - 脚本状态存档（`kasSave`/`kasLoad` + 函数指针↔偏移转换，`src/Game/KAS.c`）。
 - 语言编译：flex（`KAS2C.l`）+ bison（`KAS2C.y`）+ 代码生成（`KAS2C.c`）把 `.kas` 翻译为 `.c`/`.h`。
@@ -63,8 +63,26 @@
 | 标签解析 | `kasAITeamPtr`/`kasAITeamShipsPtr`/`kasShipsVectorPtr`/`kasTeamsVectorPtr`/`kasVolumeVectorPtr`/`kasThisTeamsVectorPtr`/`kasPathPtr`/`kasPathPtrNoErrorChecking`/`kasVolumePtr`/`kasVectorPtr`/`kasVectorPtrIfExists`/`kasGetGrowSelectionPtrIfExists`/`kasGrowSelectionPtr` | `src/Game/KAS.c` | 按标签字符串查表返回指针（团队/舰船列表/路径/点/体积） |
 | 标签表维护 | `kasLabelsInit` / `kasLabelledPathAdd` / `kasLabelledVectorAdd` / `kasLabelledVolumeAdd` / `kasLabelledEntitiesDestroy` / `kasAddShipToTeam` / `kasShipDied` | `src/Game/KAS.c` | 关卡加载期填充/清空标签表、建团队、剔除阵亡舰船 |
 | 存档 | `kasSave` / `kasLoad` / `kasConvertFuncPtrToOffset` / `kasConvertOffsetToFuncPtr` | `src/Game/KAS.c` | 序列化脚本全局状态；函数指针↔偏移互转 |
-| 宿主函数 | `kasf*`（约 250 个：`kasfAttack`/`kasfMoveTo`/`kasfDock`/`kasfHarvest`/`kasfTeamHyperspaceIn`/`kasfObjectiveCreate`/`kasfVarValueSet`/`kasfTimerCreate`/`kasfMsgSend` …） | `src/Game/KASFunc.c`（原型 `src/Game/kasfunc.h`） | 脚本可调用的命令/查询/副作用函数 |
+| 宿主函数 | 301 个启用的脚本 API，例如 `Attack`、`MoveTo`、`Dock`、`Harvest`、`TeamHyperspaceIn`、`ObjectiveCreate`、`VarSet`、`TimerCreate`、`MsgSend` | 编译器注册表 `tools/win32/KAS/KAS2C.c`；C 实现 `src/Game/KASFunc.c` | 脚本可调用的游戏命令、查询与副作用函数；按类别详见[Host API 参考](kas_host_api_reference.md) |
 | 编译器代码生成 | `kasFSMAdd`/`kasFSMStart`/`kasFSMEnd`/`kasFSMCreateStart`/`kasStateStart`/`kasStateEnd`/`kasInitializeStart`/`kasWatchStart`/`kasJump`/`kasFunctionStart`/`kasScopeSet`/`kasHeaders` | `tools/win32/KAS/KAS2C.c` | `.kas` → C 代码生成的支撑函数 |
+
+### 2.3 KAS 脚本的基础数据类型
+
+KAS 看起来像有团队、舰船列表、坐标和体积等类型；但它不是一门带完整类型声明与局部变量的通用语言。应把**表达式里的值**与**传给 Host API 的游戏对象引用**分开理解：
+
+| 脚本里的值 / 引用 | 源码对应 | 含义与限制 |
+| :-- | :-- | :-- |
+| 整数表达式 | `KAS2C.y` 的 `expression` | 表达式统一生成 C 整数运算；支持十进制/十六进制数字、`+ - * /`、比较、`and/or/not`。脚本没有浮点字面量或变量声明语法。 |
+| 布尔条件 | `true` / `false`、比较与逻辑运算 | 不是独立存储类型：编译器把 `true` / `false` 输出为 `1` / `0`，条件最终作为整数表达式判断。 |
+| 字符串 | `"..."`，以及 `LSTRING_<标签>` | 字符串是传给 Host API 的常量指针；没有脚本内可变字符串变量。`LSTRING_` 由 `LOCALIZATION` 块提供多语言文本。 |
+| 脚本变量 | `VarCreate` / `VarSet` / `VarGet` | 由 AIVar 保存有符号整数（`sdword`）。变量有 Mission、FSM、State 作用域；`G_` 前缀表示显式全局变量。 |
+| 计时器 | `TimerCreate` / `TimerSet` 等 | 用名字标识的游戏计时器；按当前脚本作用域隔离。常用于延迟、超时与阶段控制。 |
+| 团队引用 | `TEAM_<label>`、`THISTEAM` | 编译成 `AITeam *` 查找；`THISTEAM` 指当前执行 FSM 的团队。 |
+| 舰船集合引用 | `SHIPS_<label>`、`TEAMSHIPS_<label>`、`THISTEAMSHIPS` | 编译成 `GrowSelection *`。`SHIPS_` 是脚本命名的可变选择集；`TEAMSHIPS_` 和 `THISTEAMSHIPS` 分别取指定团队或当前团队的成员集合。 |
+| 空间/路径引用 | `PATH_<label>`、`POINT_<label>`、`VOLUME_<label>` | 分别解析成 `Path *`、`hvector *` 和 `Volume *`，由关卡布局标签表在运行时提供。 |
+| 集合中心点引用 | `SHIPSPOINT_`、`TEAMSPOINT_`、`VOLUMEPOINT_`、`THISTEAMSPOINT` | 解析成 `hvector *`，表示对应舰船集、团队或体积的中心位置，供移动/距离等 API 使用。 |
+
+Host API 注册表还记录每个参数的 C 类型和是否有数值返回值。当前启用接口实际用到 `sdword`、`bool`、`char *`、`AITeam *`、`GrowSelection *`、`Path *`、`hvector *` 和 `Volume *`；编译器源码能描述更多原生参数类型，但不代表这些类型都可在 KAS 表达式中声明或保存。调用器也会检查函数名、参数个数，并对不匹配的参数类型给出警告。完整接口清单与功能分类见[Host API 参考](kas_host_api_reference.md)。
 
 **编译期函数命名契约（事实，`tools/win32/KAS/KAS2C.c:1494-1642`）**：`kasInitializeStart`/`kasWatchStart` 按当前 `parseLevel`（`LEVEL_LEVEL`/`LEVEL_FSM`/`LEVEL_STATE`）生成函数名——`Init_<level>`/`Watch_<level>`（Mission 层）、`Init_<level>_<fsm>`/`Watch_<level>_<fsm>`（FSM 层）、`Init_<level>_<fsm>_<state>`/`Watch_<level>_<fsm>_<state>`（State 层），其中 `<level>` 取自源文件名（去扩展名，如 `Mission03`）。运行期 `kasMissionStart` 收到的 `Init_MissionXX`/`Watch_MissionXX` 正是这套命名产物（事实，`src/Game/SinglePlayer.c:2934-2952`、`src/Game/Tutor.c:523`）。
 
@@ -166,7 +184,7 @@ flowchart LR
 | `PATH_<id>` / `POINT_<id>` / `VOLUME_<id>` | `kasPathPtr` / `kasVectorPtr` / `kasVolumePtr` | `Path*` / `hvector*` / `Volume*` |
 | `THISTEAM` / `THISTEAMSHIPS` / `THISTEAMSPOINT` | `kasThisTeamPtr` / `(&kasThisTeamPtr->shipList)` / `kasThisTeamsVectorPtr()` | 当前团队自引用 |
 
-`JUMP <id>` 生成 `kasJump("<id>", Init_<level>_<fsm>_<id>, Watch_<level>_<fsm>_<id>); return;`（`KAS2C.c:1880-1909` + `KAS2C.y:125`）；`FSMCREATE(<id>, <team>)` 生成 `kasFSMCreate("<id>", Init_<level>_<id>, Watch_<level>_<id>, <team>);`（`KAS2C.c:1339-1366`）。`functions[]` 表把脚本函数名映射到 `kasf*` 实现名并声明参数类型（如 `"Attack" → "kasfAttack"`，`"FindEnemiesNearby" → "kasfFindEnemiesNearby"`，`KAS2C.c:48-560`）。
+`JUMP <id>` 生成 `kasJump("<id>", Init_<level>_<fsm>_<id>, Watch_<level>_<fsm>_<id>); return;`（`KAS2C.c:1880-1909` + `KAS2C.y:125`）；`FSMCREATE(<id>, <team>)` 生成 `kasFSMCreate("<id>", Init_<level>_<id>, Watch_<level>_<id>, <team>);`（`KAS2C.c:1339-1366`）。`functions[]` 表把脚本函数名映射到 `kasf*` 实现名并声明参数类型；完整启用清单见[Host API 参考](kas_host_api_reference.md)（注册表定义于 `KAS2C.c:48-1259`）。
 
 ### 3.4 存档的函数指针偏移（事实）
 

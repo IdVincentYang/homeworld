@@ -64,7 +64,7 @@ flowchart TD
 
 最后读 `AIFeatures.h`、`AIPlayer.c`、`AIFleetMan.c` 和 `AITeam.c`：区分“选择做什么”的管理器与“执行一串团队 move”的团队对象。观察脚本团队与常规 AI 团队共享哪些执行路径。
 
-对应深读：[KAS 脚本系统](modules/kas_script_overview.md) 和 [AI 决策与团队执行](modules/ai_features_overview.md)。`.kas` 编译器源码位于 `tools/win32/KAS/`。
+对应深读：[KAS 脚本系统总览](modules/kas_script_overview.md)、[KAS Host API 清单](modules/kas_host_api_reference.md) 和 [AI 决策与团队执行](modules/ai_features_overview.md)。`.kas` 编译器源码位于 `tools/win32/KAS/`。API 清单按业务分组列出当前启用的脚本接口；遇到具体函数时，从公开脚本名追到 `functions[]` 注册项，再追到 `KASFunc.c` 的 `kasf*` 实现。
 
 ### 5. 从对象状态走到画面
 

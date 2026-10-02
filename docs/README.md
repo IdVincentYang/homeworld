@@ -12,7 +12,7 @@
 | 4 | [用 C++20 协程表达 task](modules/task_coroutine_migration.md) | taskdata、pause/resume 和补跑调用如何映射到 coroutine frame 与 handle？ |
 | 5 | [对象模型](modules/spaceobj_overview.md) | 静态舰船定义与运行中的舰船如何分开管理？ |
 | 6 | [资源加载](modules/resource_loading_overview.md) 与 [statscript 数据绑定](modules/statscript_overview.md) | 关卡需要的文件怎样变成可用的静态数据？ |
-| 7 | [KAS 脚本](modules/kas_script_overview.md) 与 [AI 决策和团队执行](modules/ai_features_overview.md) | 任务脚本和电脑玩家 AI 怎样通过共享的团队 move 执行命令？ |
+| 7 | [KAS 脚本总览](modules/kas_script_overview.md)、[KAS Host API 清单](modules/kas_host_api_reference.md) 与 [AI 决策和团队执行](modules/ai_features_overview.md) | KAS 脚本怎样被编译、调用游戏宿主接口，并与电脑玩家 AI/团队 move 协作？ |
 | 8 | [LOD 系统](modules/lod_overview.md) 与 [渲染管线](modules/render_pipeline_overview.md) | 对象怎样选择细节并经渲染接口变成像素？ |
 | 9 | [UI 系统](modules/ui_system_overview.md) | 布局、控件、输入事件与业务界面怎样分层？ |
 
