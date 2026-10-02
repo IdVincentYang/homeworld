@@ -4,56 +4,105 @@
 >
 > 阅读时可以把 AI 想成两层：**管理器决定团队要做什么；`AITeam` 按队列逐步执行命令。** KAS 也能向同一团队下命令，但它负责战役脚本，不等同于电脑玩家 AI。
 
-## 1. 先看整体：AI 在一帧里做什么
+## 1. 先看整体：模块怎样协作
 
-`univUpdate()` 调用 `aiplayerUpdateAll()` 推进 KAS 和电脑玩家 AI，随后处理主 `CommandLayer`。AI 不是每个模拟帧都完整重算：`aiplayerUpdateAll()` 会按玩家难度和玩家编号错开电脑玩家的更新时机。
+`univUpdate()` 驱动 AI 玩家控制器；控制器按时机进入舰队管理器。舰队管理器协调策略管理器、团队执行器和建造请求。KAS 战役脚本可以从旁写入同一套团队命令队列；事件与辅助模块则横跨策略和执行过程提供支持。
+
+```mermaid
+flowchart LR
+    U["univUpdate()"] --> P["AIPlayer 控制器\naiplayerUpdateAll / aiplayerPlay"]
+    P --> F["舰队管理器\naifFleetCommand"]
+    U --> K["KAS 运行时\nkasExecute"]
+    F -->|分派新舰 / 敌情与上下文| S["玩家级状态\nAIPlayer、newships、请求队列"]
+    F --> A["Attack / Defense / Resource\n策略管理器"]
+    A --> O["AIOrders\naioCreate*：把意图展开为 moves"]
+    O --> Q["AITeam.moves\n共享的团队命令队列"]
+    K --> KF["KASFunc\n脚本命令的游戏侧接口"]
+    KF -->|给 ScriptTeam 下命令| Q
+    Q --> T["AITeam 执行器\naitExecute"]
+    T --> M["AIMoves\naimProcess*：推进当前 move"]
+    M --> SH["CommandLayer / 舰船行为"]
+    F -->|造船请求| B["aifProcessShipBuildRequests"]
+    B --> SH
+    E["AIEvents / AIHandler\n事件与响应"] -. 影响当前 move .-> T
+    X["AIUtilities / AIShip / AITrack\n共享工具、导航与运动辅助"] -. 被多层调用 .-> A
+    X -. 被多层调用 .-> M
+```
+
+图中最重要的共享边界是 `AITeam.moves`：常规 AI 由策略管理器经 `AIOrders` 创建或调整 move；KAS 也能通过 `KASFunc` 操作脚本团队的同一队列；最终都由 `aitExecute()` 推进。策略管理器不直接替每艘船执行完整动作，而是维护玩家级决策状态并把意图交给团队命令层。
+
+### 一次常规电脑玩家更新的调用顺序
+
+下面按标准种族 `aifFleetCommand()` 的真实源码顺序展开；分支和循环会决定某些调用是否发生。P2 海盗在入口处改走独立实现。图中的尾部公共路径说明：关闭单人游戏舰队控制时会跳过常规策略管理器，但团队执行与造船请求处理仍继续。
 
 ```mermaid
 flowchart TD
-    U["univUpdate()"] --> AU["aiplayerUpdateAll()"]
-    AU --> K{ "单人战役的 KAS 更新时机?" }
-    K -->|是| KS["kasExecute()\nMission / ScriptTeam 的 FSM 与 State watch"]
-    K -->|否| CPU{ "电脑玩家本帧到更新时机?" }
-    KS --> CPU
-    CPU -->|否| CL["clProcess(mainCommandLayer)"]
-    CPU -->|是| AP["aiplayerPlay(AIPlayer)"]
-    AP --> FC["aifFleetCommand()"]
-    FC --> M["Attack / Defense / Resource 管理器"]
-    M --> T["AITeam.moves：创建或更新团队命令"]
-    T --> EX["aitExecute()：推进每个团队的当前 move"]
-    EX --> R["造船请求 / CommandLayer 命令"]
-    R --> CL
-    CL --> NEXT["命令继续影响舰船；新下水舰回到 AIPlayer.newships"]
+    START["aifFleetCommand()"] --> P2{"player.race == P2?"}
+    P2 -->|是| P2PATH["aifP2FleetCommand()"] --> RET(["return"])
+    P2 -->|否| ALLY{"recalculateAllies?"}
+    ALLY -->|是| FIND["aifFindAllies()"] --> BLOBS
+    ALLY -->|否| BLOBS["aiuCreateBlobArrays(player)"]
+    BLOBS --> KNOW["aiuUpdateKnowledgeOfEnemyShips()"]
+    KNOW --> DISTRESS["aidClearDistressSignal()"]
+    DISTRESS --> ASSIGN["aifAssignNewShips()"]
+    ASSIGN --> FIRST{"firstTurn?"}
+    FIRST -->|是| CTRL1{"hasFleetControl?"}
+    CTRL1 -->|是| SPECIAL["aiaProcessSpecialTeams()"] --> CLEARFIRST["firstTurn = FALSE"]
+    CTRL1 -->|否| CLEARFIRST
+    FIRST -->|否| CTRL{"hasFleetControl?"}
+    CTRL -->|是| HYPER{"AIF_HYPERSPACING enabled?"}
+    HYPER -->|是| SKIM["aifSkimHyperspaceRUs()"] --> RESET
+    HYPER -->|否| RESET["ResourceManRequestShips.num_ships = 0"]
+    RESET --> ATTACK["aiaAttackManager()"]
+    ATTACK --> DEFENSE["aidDefenseManager()"]
+    DEFENSE --> RESOURCE["airResourceManager()"]
+    CTRL -->|否| EXEC
+    CLEARFIRST --> EXEC["aitExecute()"]
+    RESOURCE --> EXEC
+    EXEC --> BUILDS["aifProcessShipBuildRequests()"]
+    BUILDS --> DELETE["aiuDeleteBlobArrays()"]
+    DELETE --> DONE(["返回上层"])
 ```
 
-### 一次常规电脑玩家更新的顺序
+图中的次序很重要：先把已有新舰分派出去，再让管理器调整团队/产生请求；随后推进团队 move，最后处理建造请求。源码位置见 [`AIPlayer.c`](../../src/Game/AIPlayer.c#L832)、[`AIFleetMan.c`](../../src/Game/AIFleetMan.c#L1278) 和 [`univupdate.c`](../../src/Game/univupdate.c#L7650)。
 
-在标准种族的 `aifFleetCommand()` 中，源码顺序是：
+## 2. 模块说明
 
-1. 更新敌方舰船知识、准备本轮管理器使用的 blob 数据，并清理防御告警。
-2. `aifAssignNewShips()` 把新舰交给已有的脚本、进攻或防御等待队列；资源舰等特定类型交给资源管理器；其余舰船暂留 `newships` 储备。
-3. 首次更新时运行 `aiaProcessSpecialTeams()`；后续更新才依次运行 `aiaAttackManager()`、`aidDefenseManager()`、`airResourceManager()`。这些管理器会改团队命令，或登记建舰请求。
-4. `aitExecute()` 推进当前玩家的团队。
-5. `aifProcessShipBuildRequests()` 汇总造船/科技需求并向 `CommandLayer` 发出建造命令。
-6. 清理本轮临时 blob 数据。
+### AIPlayer 控制器
 
-**两个重要分支**：`aifFleetCommand()` 对 P2 海盗种族会改走 `aifP2FleetCommand()` 后返回；单人游戏关闭电脑舰队控制时，三个常规管理器会被跳过，但团队执行和请求处理仍在该函数尾部。见 [`AIPlayer.c`](../../src/Game/AIPlayer.c#L832)、[`AIFleetMan.c`](../../src/Game/AIFleetMan.c#L1278) 和 [`univupdate.c`](../../src/Game/univupdate.c#L7650)。
+`AIPlayer.c` 安排某个电脑玩家何时更新，并设置当前玩家上下文 `aiCurrentAIPlayer`。许多管理器和 feature 查询通过这个旧式全局上下文找到当前 `AIPlayer`。
 
-## 2. 模块分工：不同管理器改同一份团队状态
+### 舰队管理器
 
-| 部分 | 负责的问题 | 关键入口 / 文件 | 主要读写状态 |
-| :-- | :-- | :-- | :-- |
-| 玩家 AI 外壳 | 何时更新某个电脑玩家；建立当前玩家上下文；启动、结束与存档 | `aiplayerUpdateAll()`、`aiplayerPlay()`，`AIPlayer.c` | `AIPlayer`、全局 `aiCurrentAIPlayer` |
-| 舰队管理器 | 新舰归属、建舰请求、科技/资源和建造调度 | `aifFleetCommand()`、`aifAssignNewShips()`、`aifProcessShipBuildRequests()`，`AIFleetMan.c` | `newships`、`RequestShips` 队列、等待团队队列、建造计数 |
-| 进攻管理器 | 侦察、骚扰、进攻团队构成与攻击类型 | `aiaAttackManager()`、`aiaGenerateNewAttackTeam()`，`AIAttackMan.c` | `attackTeam[]`、`reconTeam[]`、攻击概率和特征位 |
-| 防御管理器 | 护卫、巡逻、母舰防守、入侵应对 | `aidDefenseManager()`，`AIDefenseMan.c` | `guardTeams[]`、防御目标、告警和特征位 |
-| 资源管理器 | 采集舰、资源点、资源船与支援舰的调度 | `airResourceManager()`，`AIResourceMan.c` | `airResourceCollectors`、`airResourceReserves`、资源船数量 |
-| 订单构造器 | 把“攻击/守卫/侦察”等高层意图展开成 move 队列 | `aioCreate*()`，`AIOrders.c` / `AIOrders2.c` | `AITeam.moves` |
-| 团队执行器 | 逐步执行队列中的当前命令，推进、等待或销毁团队 | `aitExecute()`，`AITeam.c`；move 实现在 `AIMoves*.c` | `AITeam.curMove`、`AITeamMove` |
-| 事件与辅助 | move 执行中的条件事件；飞行、目标选择、几何和通用 AI 帮助函数 | `AIEvents.c`、`AIHandler.c`、`AIShip.c`、`AIUtilities.c` | 当前团队、目标选择和 move 上的 `AIEvents` |
-| 战役脚本桥接 | 运行 KAS 任务脚本，给 `ScriptTeam` 下发高层命令 | `KAS.c`、`KASFunc.c` | `AITeam.kas*` 字段和同一条 `AITeam.moves` 队列 |
+`AIFleetMan.c` 中的 `aifFleetCommand()` 总编排敌情/临时数据准备、新舰分派、策略管理器调用和建造请求处理；它协调流程，但不替策略管理器作出具体攻防决策。
 
-管理器通常不是各自持有一套独立的团队对象；它们的许多状态直接放在所属玩家的 `AIPlayer` 里。`aiCurrentAIPlayer` 则是旧式接口使用的“当前正在处理哪位 AI 玩家”上下文，很多 feature 宏与管理器函数会隐式读取它。
+### Attack 管理器
+
+`AIAttackMan.c` 决定侦察、骚扰和攻击团队的组成与攻击类型；通过 `AIOrders` 把选定的策略转成团队命令，并可登记补充舰船的请求。
+
+### Defense 管理器
+
+`AIDefenseMan.c` 组织护卫、巡逻和母舰防守等任务，维护防御目标与告警状态，并为防御团队生成命令或舰船请求。
+
+### Resource 管理器
+
+`AIResourceMan.c` 调度资源采集舰和相关支援团队，维护资源舰状态，并能请求补充特定舰船。
+
+### AIOrders 与 AIMoves
+
+`AIOrders*.c` 把高层意图编排成有序 move；`AIMoves*.c` 定义 move 的参数和逐次处理逻辑。move 是团队计划中的执行步骤，不等同于瞬时完成的舰船动作。
+
+### AITeam 执行器
+
+`AITeam.c` 以 `AITeam.curMove` 为入口推进团队队列；等待、事件处理、完成/删除 move 等流程在这里与对应 move 处理函数之间协作。
+
+### KAS 脚本桥接
+
+`KAS.c` 推进战役脚本的 mission/FSM/state 回调；`KASFunc.c` 提供脚本调用的游戏侧接口，把脚本命令转成脚本团队的 move。它与常规 AI 共用团队执行机制。
+
+### 事件与横切辅助
+
+`AIEvents.c` 与 `AIHandler.c` 在 move 执行期间检查事件条件并调用响应处理器；`AIUtilities.c`、`AIShip.c` 与 `AItrack.c` 则为多个管理器和 move 提供通用工具、单舰导航和运动跟踪能力。
 
 ## 3. 关键数据结构：玩家、团队、move 和造船请求
 
